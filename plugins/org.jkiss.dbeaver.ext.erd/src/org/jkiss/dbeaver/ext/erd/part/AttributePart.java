@@ -35,6 +35,7 @@ import org.jkiss.dbeaver.ext.erd.directedit.ColumnNameTypeCellEditorValidator;
 import org.jkiss.dbeaver.ext.erd.directedit.ExtendedDirectEditManager;
 import org.jkiss.dbeaver.ext.erd.directedit.LabelCellEditorLocator;
 import org.jkiss.dbeaver.ext.erd.directedit.ValidationMessageHandler;
+import org.jkiss.dbeaver.ext.erd.editor.ERDAttributeStyle;
 import org.jkiss.dbeaver.ext.erd.editor.ERDGraphicalViewer;
 import org.jkiss.dbeaver.ext.erd.figures.AttributeItemFigure;
 import org.jkiss.dbeaver.ext.erd.figures.EditableLabel;
@@ -60,16 +61,20 @@ public class AttributePart extends PropertyAwarePart
 	 * @return the ColumnLabel representing the Column
 	 */
 	@Override
-    protected IFigure createFigure()
+    protected AttributeItemFigure createFigure()
 	{
 		ERDEntityAttribute column = (ERDEntityAttribute) getModel();
-        AttributeItemFigure editableLabel = new AttributeItemFigure(column);
+        AttributeItemFigure attributeFigure = new AttributeItemFigure(column);
 
         DiagramPart diagramPart = (DiagramPart) getParent().getParent();
+		boolean showNullability = diagramPart.getDiagram().hasAttributeStyle(ERDAttributeStyle.NULLABILITY);
         Font columnFont = diagramPart.getNormalFont();
         Color columnColor = diagramPart.getContentPane().getForegroundColor();
         if (column.isInPrimaryKey()) {
             columnFont = diagramPart.getBoldFont();
+            if (showNullability && !column.getObject().isRequired()) {
+                columnFont = diagramPart.getBoldItalicFont();
+            }
 /*
             if (!column.isInForeignKey()) {
                 columnFont = diagramPart.getBoldFont();
@@ -77,17 +82,26 @@ public class AttributePart extends PropertyAwarePart
                 columnFont = diagramPart.getBoldItalicFont();
             }
 */
+        } else {
+            if (showNullability && !column.getObject().isRequired()) {
+                columnFont = diagramPart.getItalicFont();
+            }
         }
         if (column.isInForeignKey()) {
             //columnColor = Display.getDefault().getSystemColor(SWT.COLOR_DARK_BLUE);
         }
-        editableLabel.setFont(columnFont);
-        editableLabel.setForegroundColor(columnColor);
-        return editableLabel;
+        attributeFigure.setFont(columnFont);
+        attributeFigure.setForegroundColor(columnColor);
+        return attributeFigure;
     }
 
+	@Override
+	public AttributeItemFigure getFigure() {
+		return (AttributeItemFigure)super.getFigure();
+	}
+
 	/**
-	 * Creats EditPolicies for the column label
+	 * Create EditPolicies for the column label
 	 */
 	@Override
     protected void createEditPolicies()
@@ -109,7 +123,7 @@ public class AttributePart extends PropertyAwarePart
 			performDirectEdit();
 */
         } else if (request.getType() == RequestConstants.REQ_OPEN) {
-            getColumn().openEditor();
+            getAttribute().openEditor();
         }
 	}
 
@@ -127,7 +141,7 @@ public class AttributePart extends PropertyAwarePart
 			ERDGraphicalViewer viewer = (ERDGraphicalViewer) getViewer();
 			ValidationMessageHandler handler = viewer.getValidationHandler();
 
-			Label l = (Label) getFigure();
+			Label l = getFigure();
 			ColumnNameTypeCellEditorValidator columnNameTypeCellEditorValidator = new ColumnNameTypeCellEditorValidator(
 					handler);
 
@@ -144,7 +158,7 @@ public class AttributePart extends PropertyAwarePart
     public void setSelected(int value)
 	{
 		super.setSelected(value);
-		EditableLabel columnLabel = (EditableLabel) getFigure();
+		EditableLabel columnLabel = getFigure();
 		if (value != EditPart.SELECTED_NONE)
 			columnLabel.setSelected(true);
 		else
@@ -154,7 +168,7 @@ public class AttributePart extends PropertyAwarePart
 
 	public void handleNameChange(String textValue)
 	{
-		EditableLabel label = (EditableLabel) getFigure();
+		EditableLabel label = getFigure();
 		label.setVisible(false);
 		setSelected(EditPart.SELECTED_NONE);
 		label.revalidate();
@@ -166,8 +180,8 @@ public class AttributePart extends PropertyAwarePart
 	@Override
     protected void commitNameChange(PropertyChangeEvent evt)
 	{
-		EditableLabel label = (EditableLabel) getFigure();
-		label.setText(getColumn().getLabelText());
+		AttributeItemFigure label = getFigure();
+		label.setText(getAttribute().getLabelText());
 		setSelected(EditPart.SELECTED_PRIMARY);
 		label.revalidate();
 	}
@@ -178,7 +192,7 @@ public class AttributePart extends PropertyAwarePart
 	 */
 	public void revertNameChange(String oldValue)
 	{
-		EditableLabel label = (EditableLabel) getFigure();
+		AttributeItemFigure label = getFigure();
 		label.setVisible(true);
 		setSelected(EditPart.SELECTED_PRIMARY);
 		label.revalidate();
@@ -192,13 +206,10 @@ public class AttributePart extends PropertyAwarePart
     protected void refreshVisuals()
 	{
 		ERDEntityAttribute column = (ERDEntityAttribute) getModel();
-		EditableLabel columnLabel = (EditableLabel) getFigure();
-		columnLabel.setText(column.getLabelText());
+		getFigure().setText(column.getLabelText());
 	}
 	
-	
-
-	public ERDEntityAttribute getColumn()
+	public ERDEntityAttribute getAttribute()
 	{
 		return (ERDEntityAttribute) getModel();
 	}
@@ -206,8 +217,7 @@ public class AttributePart extends PropertyAwarePart
     @Override
     public String toString()
     {
-        return ERDMessages.column_ + getColumn().getLabelText();
+        return ERDMessages.column_ + getAttribute().getLabelText();
     }
-
 
 }

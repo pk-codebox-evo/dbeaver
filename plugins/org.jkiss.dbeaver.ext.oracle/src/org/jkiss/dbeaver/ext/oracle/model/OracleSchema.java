@@ -29,14 +29,12 @@ import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
-import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCCompositeCache;
-import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectCache;
-import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectLookup;
-import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCStructCache;
+import org.jkiss.dbeaver.model.impl.jdbc.cache.*;
 import org.jkiss.dbeaver.model.meta.Association;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSEntity;
+import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.rdb.DBSProcedureContainer;
 import org.jkiss.dbeaver.model.struct.rdb.DBSSchema;
 import org.jkiss.utils.ArrayUtils;
@@ -310,7 +308,7 @@ public class OracleSchema extends OracleGlobalObject implements DBSSchema, DBPRe
     }
 
     @Override
-    public synchronized boolean refreshObject(@NotNull DBRProgressMonitor monitor)
+    public synchronized DBSObject refreshObject(@NotNull DBRProgressMonitor monitor)
         throws DBException
     {
         tableCache.clearCache();
@@ -325,7 +323,7 @@ public class OracleSchema extends OracleGlobalObject implements DBSSchema, DBPRe
         synonymCache.clearCache();
         javaCache.clearCache();
         recycleBin.clearCache();
-        return true;
+        return this;
     }
 
     @Override
@@ -350,7 +348,7 @@ public class OracleSchema extends OracleGlobalObject implements DBSSchema, DBPRe
         return tableColumn;
     }
 
-    public static class TableCache extends JDBCStructCache<OracleSchema, OracleTableBase, OracleTableColumn> implements JDBCObjectLookup<OracleSchema> {
+    public static class TableCache extends JDBCStructLookupCache<OracleSchema, OracleTableBase, OracleTableColumn> {
 
         private static final Comparator<? super OracleTableColumn> ORDER_COMPARATOR = new Comparator<OracleTableColumn>() {
             @Override
@@ -365,29 +363,23 @@ public class OracleSchema extends OracleGlobalObject implements DBSSchema, DBPRe
             setListOrderComparator(DBUtils.<OracleTableBase>nameComparator());
         }
 
+        @NotNull
         @Override
-        protected JDBCStatement prepareObjectsStatement(@NotNull JDBCSession session, @NotNull OracleSchema owner)
-            throws SQLException
-        {
-            return prepareObjectsStatement(session, owner, null);
-        }
-
-        @Override
-        public JDBCStatement prepareObjectsStatement(@NotNull JDBCSession session, @NotNull OracleSchema owner, @Nullable String objectName) throws SQLException {
+        public JDBCStatement prepareLookupStatement(@NotNull JDBCSession session, @NotNull OracleSchema owner, @Nullable OracleTableBase object, @Nullable String objectName) throws SQLException {
             final JDBCPreparedStatement dbStat = session.prepareStatement(
                     "\tSELECT " + OracleUtils.getSysCatalogHint(owner.getDataSource()) + " t.OWNER,t.TABLE_NAME as TABLE_NAME,'TABLE' as OBJECT_TYPE,'VALID' as STATUS,t.TABLE_TYPE_OWNER,t.TABLE_TYPE,t.TABLESPACE_NAME,t.PARTITIONED,t.IOT_TYPE,t.IOT_NAME,t.TEMPORARY,t.SECONDARY,t.NESTED,t.NUM_ROWS \n" +
                     "\tFROM SYS.ALL_ALL_TABLES t\n" +
-                    "\tWHERE t.OWNER=? AND NESTED='NO'" + (objectName == null ? "": " AND t.TABLE_NAME=?") + "\n" +
+                    "\tWHERE t.OWNER=? AND NESTED='NO'" + (object == null && objectName == null ? "": " AND t.TABLE_NAME=?") + "\n" +
                 "UNION ALL\n" +
                     "\tSELECT " + OracleUtils.getSysCatalogHint(owner.getDataSource()) + " o.OWNER,o.OBJECT_NAME as TABLE_NAME,'VIEW' as OBJECT_TYPE,o.STATUS,NULL,NULL,NULL,NULL,NULL,NULL,o.TEMPORARY,o.SECONDARY,NULL,NULL \n" +
                     "\tFROM SYS.ALL_OBJECTS o \n" +
-                    "\tWHERE o.OWNER=? AND o.OBJECT_TYPE='VIEW'" + (objectName == null ? "": " AND o.OBJECT_NAME=?") + "\n"
+                    "\tWHERE o.OWNER=? AND o.OBJECT_TYPE='VIEW'" + (object == null && objectName == null  ? "": " AND o.OBJECT_NAME=?") + "\n"
                 );
             int index = 1;
             dbStat.setString(index++, owner.getName());
-            if (objectName != null) dbStat.setString(index++, objectName);
+            if (object != null || objectName != null) dbStat.setString(index++, object != null ? object.getName() : objectName);
             dbStat.setString(index++, owner.getName());
-            if (objectName != null) dbStat.setString(index, objectName);
+            if (object != null || objectName != null) dbStat.setString(index, object != null ? object.getName() : objectName);
             return dbStat;
         }
 
@@ -706,18 +698,18 @@ public class OracleSchema extends OracleGlobalObject implements DBSSchema, DBPRe
     /**
      * Procedures cache implementation
      */
-    static class ProceduresCache extends JDBCObjectCache<OracleSchema, OracleProcedureStandalone> {
+    static class ProceduresCache extends JDBCObjectLookupCache<OracleSchema, OracleProcedureStandalone> {
 
         @Override
-        protected JDBCStatement prepareObjectsStatement(@NotNull JDBCSession session, @NotNull OracleSchema owner)
-            throws SQLException
-        {
+        public JDBCStatement prepareLookupStatement(@NotNull JDBCSession session, @NotNull OracleSchema owner, @Nullable OracleProcedureStandalone object, @Nullable String objectName) throws SQLException {
             JDBCPreparedStatement dbStat = session.prepareStatement(
                 "SELECT " + OracleUtils.getSysCatalogHint(owner.getDataSource()) + " * FROM SYS.ALL_OBJECTS " +
-                "WHERE OBJECT_TYPE IN ('PROCEDURE','FUNCTION') " +
-                "AND OWNER=? " +
-                "ORDER BY OBJECT_NAME");
+                    "WHERE OBJECT_TYPE IN ('PROCEDURE','FUNCTION') " +
+                    "AND OWNER=? " +
+                    (object == null && objectName == null ? "" : "AND OBJECT_NAME=? ") +
+                    "ORDER BY OBJECT_NAME");
             dbStat.setString(1, owner.getName());
+            if (object != null || objectName != null) dbStat.setString(1, object != null ? object.getName() : objectName);
             return dbStat;
         }
 
@@ -727,6 +719,7 @@ public class OracleSchema extends OracleGlobalObject implements DBSSchema, DBPRe
         {
             return new OracleProcedureStandalone(owner, dbResult);
         }
+
     }
 
     static class PackageCache extends JDBCObjectCache<OracleSchema, OraclePackage> {

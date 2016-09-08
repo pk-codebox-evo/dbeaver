@@ -109,20 +109,31 @@ public class ResultSetUtils
                     attrEntity = entity;
                 }
                 if (attrEntity != null) {
-                    if (sqlQuery != null) {
-                        final SQLSelectItem selectItem = sqlQuery.getSelectItem(attrMeta.getName());
-                        if (selectItem != null && !selectItem.isPlainColumn()) {
-                            // It is not a column.
-                            // It maybe an expression, function or anything else
-                            continue;
-                        }
-                    }
                     DBSEntityAttribute tableColumn;
                     if (attrMeta.getPseudoAttribute() != null) {
                         tableColumn = attrMeta.getPseudoAttribute().createFakeAttribute(attrEntity, attrMeta);
                     } else {
                         tableColumn = attrEntity.getAttribute(monitor, attrMeta.getName());
                     }
+                    if (sqlQuery != null) {
+                        if (tableColumn != null && tableColumn.getTypeID() != attrMeta.getTypeID()) {
+                            // !! Do not try to use table column handlers for custom queries if source data type
+                            // differs from table data type.
+                            // Query may have expressions with the same alias as underlying table column
+                            // and this expression may return very different data type. It breaks fetch completely.
+                            // There should be a better solution but for now let's just disable this too smart feature.
+                            continue;
+                        }
+/*
+                        final SQLSelectItem selectItem = sqlQuery.getSelectItem(attrMeta.getName());
+                        if (selectItem != null && !selectItem.isPlainColumn()) {
+                            // It is not a column.
+                            // It maybe an expression, function or anything else
+                            continue;
+                        }
+*/
+                    }
+
                     if (tableColumn != null && binding.setEntityAttribute(tableColumn)) {
                         // We have new type and new value handler.
                         // We have to fix already fetched values.
@@ -219,15 +230,23 @@ public class ResultSetUtils
         } else {
             if (CommonUtils.isEmpty(catalogName) && !CommonUtils.isEmpty(schemaName) && scChildType != null && DBSCatalog.class.isAssignableFrom(scChildType)) {
                 // No catalog name specified but metadata supports catalogs (e.g. PostgreSQL)
-                DBSObject selectedObject = DBUtils.getSelectedObject(objectContainer, false);
-                if (selectedObject != null && selectedObject instanceof DBSCatalog) {
-                    objectContainer = (DBSCatalog)selectedObject;
-                }
                 // Catalog specified instead of schema. This may happen if metadata provided by SQL query parser
                 // which doesn't know a difference between catalogs and schemas
                 entityObject = DBUtils.getObjectByPath(session.getProgressMonitor(), objectContainer, schemaName, null, entityName);
                 if (entityObject == null) {
                     entityObject = DBUtils.getObjectByPath(session.getProgressMonitor(), objectContainer, null, schemaName, entityName);
+                }
+                if (entityObject == null) {
+                    // Try using active object
+                    DBSObject selectedObject = DBUtils.getSelectedObject(objectContainer, false);
+                    if (selectedObject != null && selectedObject instanceof DBSCatalog) {
+                        objectContainer = (DBSCatalog)selectedObject;
+                        entityObject = DBUtils.getObjectByPath(session.getProgressMonitor(), objectContainer, schemaName, null, entityName);
+                        if (entityObject == null) {
+                            entityObject = DBUtils.getObjectByPath(session.getProgressMonitor(), objectContainer, null, schemaName, entityName);
+                        }
+                    }
+
                 }
             } else {
                 entityObject = DBUtils.getObjectByPath(session.getProgressMonitor(), objectContainer, catalogName, schemaName, entityName);

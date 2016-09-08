@@ -253,7 +253,7 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
     }
 
     @Override
-    public boolean refreshObject(@NotNull DBRProgressMonitor monitor)
+    public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor)
         throws DBException
     {
         super.refreshObject(monitor);
@@ -265,7 +265,7 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
 
         this.initialize(monitor);
 
-        return true;
+        return this;
     }
 
     MySQLTable findTable(DBRProgressMonitor monitor, String catalogName, String tableName)
@@ -328,7 +328,7 @@ public class MySQLDataSource extends JDBCDataSource implements DBSObjectSelector
     {
         final MySQLCatalog oldSelectedEntity = getDefaultObject();
         if (!(object instanceof MySQLCatalog)) {
-            throw new IllegalArgumentException("Invalid object type: " + object);
+            throw new DBException("Invalid object type: " + object);
         }
         for (JDBCExecutionContext context : getAllContexts()) {
             useDatabase(monitor, context, (MySQLCatalog) object);

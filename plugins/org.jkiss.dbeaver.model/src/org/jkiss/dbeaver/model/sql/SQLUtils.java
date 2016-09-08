@@ -154,7 +154,16 @@ public final class SQLUtils {
 
     public static String makeLikePattern(String like)
     {
-        return like.replace("%", ".*").replace("_", ".?");
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < like.length(); i++) {
+            char c = like.charAt(i);
+            if (c == '*') result.append(".*");
+            else if (c == '?') result.append(".");
+            else if (c == '%') result.append(".*");
+            else if (Character.isLetterOrDigit(c)) result.append(c);
+            else result.append("\\").append(c);
+        }
+        return result.toString();
     }
 
     public static boolean matchesLike(String string, String like)
@@ -365,6 +374,9 @@ public final class SQLUtils {
             StringBuilder conString = new StringBuilder();
             Object value = constraint.getValue();
             if (DBUtils.isNullValue(value)) {
+                if (operator.getArgumentCount() == 0) {
+                    return operator.getStringValue();
+                }
                 conString.append("IS ");
                 if (constraint.isReverseOperator()) {
                     conString.append("NOT ");
@@ -573,5 +585,36 @@ public final class SQLUtils {
             }
         }
         return slComment + " " + comment + GeneralUtils.getDefaultLineSeparator();
+    }
+
+    public static String generateParamList(int paramCount) {
+        if (paramCount == 0) {
+            return "";
+        } else if (paramCount == 1) {
+            return "?";
+        }
+        StringBuilder sql = new StringBuilder("?");
+        for (int i = 0; i < paramCount - 1; i++) {
+            sql.append(",?");
+        }
+        return sql.toString();
+    }
+
+    /**
+     * Replaces single \r linefeeds with \n (some databases don't like them)
+     */
+    public static String fixLineFeeds(String sql) {
+        if (sql.indexOf('\r') == -1) {
+            return sql;
+        }
+        boolean hasFixes = false;
+        char[] fixed = sql.toCharArray();
+        for (int i = 0; i < fixed.length; i++) {
+            if (fixed[i] == '\r' && (i == fixed.length - 1 || fixed[i + 1] != '\n')) {
+                fixed[i] = '\n';
+                hasFixes = true;
+            }
+        }
+        return hasFixes ? String.valueOf(fixed) : sql;
     }
 }

@@ -388,7 +388,7 @@ public abstract class SQLEditorBase extends BaseTextEditor {
         SQLDialect dialect = getSQLDialect();
 
         syntaxManager.init(dialect, getActivePreferenceStore());
-        ruleManager.refreshRules(getDataSource());
+        ruleManager.refreshRules(getDataSource(), getEditorInput());
 
         Document document = getDocument();
         if (document != null) {
@@ -673,6 +673,7 @@ public abstract class SQLEditorBase extends BaseTextEditor {
                         continue;
                     }
                     String queryText = document.get(statementStart, tokenOffset - statementStart);
+                    queryText = SQLUtils.fixLineFeeds(queryText);
 
                     // FIXME: includes last delimiter in query (Oracle?)
                     if (isDelimiter && hasBlocks && dialect.isDelimiterAfterBlock()) {

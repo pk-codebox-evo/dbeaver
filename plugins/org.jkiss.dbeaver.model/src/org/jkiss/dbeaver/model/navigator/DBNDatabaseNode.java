@@ -105,8 +105,8 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
             }
         }
 /*
-        if (object instanceof DBSObjectUnique) {
-            String uniqueName = ((DBSObjectUnique) object).getUniqueName();
+        if (object instanceof DBPUniqueObject) {
+            String uniqueName = ((DBPUniqueObject) object).getUniqueName();
             if (!uniqueName.equals(objectName)) {
                 if (uniqueName.startsWith(objectName)) {
                     uniqueName = uniqueName.substring(objectName.length());
@@ -184,7 +184,7 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
     }
 
     @Override
-    public DBNDatabaseNode[] getChildren(DBRProgressMonitor monitor)
+    public synchronized DBNDatabaseNode[] getChildren(DBRProgressMonitor monitor)
         throws DBException
     {
         if (childNodes == null && allowsChildren()) {
@@ -303,15 +303,24 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
             log.warn("Attempt to refresh locked node '" + getNodeName() + "'"); //$NON-NLS-1$ //$NON-NLS-2$
             return null;
         }
-        if (getObject() instanceof DBPRefreshableObject && ((DBPRefreshableObject)getObject()).refreshObject(monitor)) {
-            refreshNodeContent(monitor, source);
-            return this;
+        DBSObject object = getObject();
+        if (object instanceof DBPRefreshableObject) {
+            DBSObject newObject = ((DBPRefreshableObject) object).refreshObject(monitor);
+            if (newObject == null) {
+                if (parentNode instanceof DBNDatabaseNode) {
+                    ((DBNDatabaseNode) parentNode).removeChildItem(object);
+                }
+                return null;
+            } else {
+                refreshNodeContent(monitor, newObject, source);
+                return this;
+            }
         } else {
             return super.refreshNode(monitor, source);
         }
     }
 
-    private void refreshNodeContent(final DBRProgressMonitor monitor, Object source)
+    private void refreshNodeContent(final DBRProgressMonitor monitor, DBSObject newObject, Object source)
         throws DBException
     {
         if (isDisposed()) {
@@ -320,6 +329,9 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
         this.locked = true;
         DBNModel model = getModel();
         try {
+            if (newObject != getObject()) {
+                reloadObject(monitor, newObject);
+            }
             model.fireNodeUpdate(source, this, DBNEvent.NodeChange.LOCK);
 
             this.reloadChildren(monitor);
@@ -457,7 +469,7 @@ public abstract class DBNDatabaseNode extends DBNNode implements DBSWrapper, DBP
         }
 
         DBSObjectFilter filter = getNodeFilter(meta, false);
-        this.filtered = filter != null && !filter.isEmpty();
+        this.filtered = filter != null && !filter.isNotApplicable();
 
         Collection<?> itemList = (Collection<?>) propertyValue;
         if (itemList.isEmpty()) {

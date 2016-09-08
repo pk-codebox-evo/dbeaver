@@ -33,6 +33,7 @@ import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectCache;
 import org.jkiss.dbeaver.model.meta.*;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSEntityConstraintType;
+import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.rdb.DBSForeignKeyModifyRule;
 import org.jkiss.utils.CommonUtils;
 
@@ -195,20 +196,6 @@ public class MySQLTable extends MySQLTableBase
         throws DBException
     {
         return partitionCache.getAllObjects(monitor, this);
-    }
-
-    @Override
-    public boolean refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException
-    {
-        super.refreshObject(monitor);
-        getContainer().indexCache.clearObjectCache(this);
-        getContainer().constraintCache.clearObjectCache(this);
-        foreignKeys.clearCache();
-        partitionCache.clearCache();
-        synchronized (additionalInfo) {
-            additionalInfo.loaded = false;
-        }
-        return true;
     }
 
     private void loadAdditionalInfo(DBRProgressMonitor monitor) throws DBCException

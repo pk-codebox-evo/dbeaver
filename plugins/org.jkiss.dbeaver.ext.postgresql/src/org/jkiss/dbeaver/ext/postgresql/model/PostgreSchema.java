@@ -29,15 +29,14 @@ import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
-import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCCompositeCache;
-import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectCache;
-import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCStructCache;
+import org.jkiss.dbeaver.model.impl.jdbc.cache.*;
 import org.jkiss.dbeaver.model.meta.Association;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSDataType;
 import org.jkiss.dbeaver.model.struct.DBSEntity;
 import org.jkiss.dbeaver.model.struct.DBSEntityConstraintType;
+import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.rdb.DBSProcedureContainer;
 import org.jkiss.dbeaver.model.struct.rdb.DBSSchema;
 
@@ -232,6 +231,17 @@ public class PostgreSchema implements DBSSchema, DBPNamedObject2, DBPSaveableObj
         return proceduresCache.getObject(monitor, this, procName);
     }
 
+    public PostgreProcedure getProcedure(DBRProgressMonitor monitor, long oid)
+        throws DBException
+    {
+        for (PostgreProcedure proc : proceduresCache.getAllObjects(monitor, this)) {
+            if (proc.getObjectId() == oid) {
+                return proc;
+            }
+        }
+        return null;
+    }
+
     @Override
     public Collection<PostgreTableReal> getChildren(@NotNull DBRProgressMonitor monitor)
         throws DBException
@@ -271,7 +281,7 @@ public class PostgreSchema implements DBSSchema, DBPNamedObject2, DBPSaveableObj
     }
 
     @Override
-    public synchronized boolean refreshObject(@NotNull DBRProgressMonitor monitor)
+    public synchronized DBSObject refreshObject(@NotNull DBRProgressMonitor monitor)
         throws DBException
     {
         collationCache.clearCache();
@@ -280,7 +290,7 @@ public class PostgreSchema implements DBSSchema, DBPNamedObject2, DBPSaveableObj
         constraintCache.clearCache();
         proceduresCache.clearCache();
         indexCache.clearCache();
-        return true;
+        return this;
     }
 
     @Override
@@ -698,25 +708,28 @@ public class PostgreSchema implements DBSSchema, DBPNamedObject2, DBPSaveableObj
     /**
      * Procedures cache implementation
      */
-    class ProceduresCache extends JDBCObjectCache<PostgreSchema, PostgreProcedure> {
+    static class ProceduresCache extends JDBCObjectLookupCache<PostgreSchema, PostgreProcedure> {
 
         ProceduresCache()
         {
             super();
         }
 
+        @NotNull
         @Override
-        protected JDBCStatement prepareObjectsStatement(@NotNull JDBCSession session, @NotNull PostgreSchema owner)
-            throws SQLException
-        {
+        public JDBCStatement prepareLookupStatement(@NotNull JDBCSession session, @NotNull PostgreSchema owner, @Nullable PostgreProcedure object, @Nullable String objectName) throws SQLException {
             JDBCPreparedStatement dbStat = session.prepareStatement(
                 "SELECT p.oid,p.*,d.description\n" +
-                "FROM pg_catalog.pg_proc p\n" +
-                "LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=p.oid\n" +
-                "WHERE p.pronamespace=?\n" +
-                "ORDER BY p.proname"
+                    "FROM pg_catalog.pg_proc p\n" +
+                    "LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=p.oid\n" +
+                    "WHERE p.pronamespace=?" +
+                    (object == null ? "" : " AND p.oid=?") +
+                    "\nORDER BY p.proname"
             );
-            dbStat.setLong(1, getObjectId());
+            dbStat.setLong(1, owner.getObjectId());
+            if (object != null) {
+                dbStat.setLong(2, object.getObjectId());
+            }
             return dbStat;
         }
 
@@ -724,8 +737,9 @@ public class PostgreSchema implements DBSSchema, DBPNamedObject2, DBPSaveableObj
         protected PostgreProcedure fetchObject(@NotNull JDBCSession session, @NotNull PostgreSchema owner, @NotNull JDBCResultSet dbResult)
             throws SQLException, DBException
         {
-            return new PostgreProcedure(PostgreSchema.this, dbResult);
+            return new PostgreProcedure(owner, dbResult);
         }
+
     }
 
 }

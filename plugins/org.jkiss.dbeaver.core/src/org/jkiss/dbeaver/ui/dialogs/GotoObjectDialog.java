@@ -32,6 +32,7 @@ import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.dialogs.FilteredItemsSelectionDialog;
 import org.eclipse.ui.dialogs.SearchPattern;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.DBPNamedObject;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
@@ -140,8 +141,13 @@ public class GotoObjectDialog extends FilteredItemsSelectionDialog {
                 false,
                 true,
                 1000);
+
+            DBPDataSourceContainer dsContainer = context.getDataSource().getContainer();
             for (DBSObjectReference ref : result) {
-                contentProvider.add(ref, itemsFilter);
+                DBSObjectFilter filter = dsContainer.getObjectFilter(ref.getObjectClass(), ref.getContainer(), true);
+                if (filter == null || !filter.isEnabled() || filter.matches(ref.getName())) {
+                    contentProvider.add(ref, itemsFilter);
+                }
             }
         } catch (DBException e) {
             throw new CoreException(GeneralUtils.makeExceptionStatus(e));

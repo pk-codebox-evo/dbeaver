@@ -84,6 +84,7 @@ import org.jkiss.dbeaver.ui.controls.ProgressPageControl;
 import org.jkiss.dbeaver.ui.controls.itemlist.ObjectSearcher;
 import org.jkiss.dbeaver.ui.dialogs.DialogUtils;
 import org.jkiss.dbeaver.utils.ContentUtils;
+import org.jkiss.utils.ArrayUtils;
 import org.jkiss.utils.CommonUtils;
 
 import java.io.FileOutputStream;
@@ -717,14 +718,20 @@ public abstract class ERDEditorPart extends GraphicalEditorWithFlyoutPalette
 
     }
 
-    public MenuManager createAttributeVisibilityMenu()
+    public void fillAttributeVisibilityMenu(IMenuManager menu)
     {
+        MenuManager asMenu = new MenuManager("Attribute Styles");
+        asMenu.add(new ChangeAttributePresentationAction(ERDAttributeStyle.ICONS));
+        asMenu.add(new ChangeAttributePresentationAction(ERDAttributeStyle.TYPES));
+        asMenu.add(new ChangeAttributePresentationAction(ERDAttributeStyle.NULLABILITY));
+        menu.add(asMenu);
+
         MenuManager avMenu = new MenuManager("Show Attributes");
         avMenu.add(new ChangeAttributeVisibilityAction(ERDAttributeVisibility.ALL));
         avMenu.add(new ChangeAttributeVisibilityAction(ERDAttributeVisibility.KEYS));
         avMenu.add(new ChangeAttributeVisibilityAction(ERDAttributeVisibility.PRIMARY));
         avMenu.add(new ChangeAttributeVisibilityAction(ERDAttributeVisibility.NONE));
-        return avMenu;
+        menu.add(avMenu);
     }
 
     public void printDiagram()
@@ -776,6 +783,28 @@ public abstract class ERDEditorPart extends GraphicalEditorWithFlyoutPalette
 
     protected abstract void loadDiagram();
 
+    private class ChangeAttributePresentationAction extends Action {
+        private final ERDAttributeStyle style;
+        public ChangeAttributePresentationAction(ERDAttributeStyle style) {
+            super("Show " + style.getTitle(), AS_CHECK_BOX);
+            this.style = style;
+        }
+        @Override
+        public boolean isChecked()
+        {
+            return ArrayUtils.contains(
+                ERDAttributeStyle.getDefaultStyles(ERDActivator.getDefault().getPreferenceStore()),
+                style);
+        }
+
+        @Override
+        public void run()
+        {
+            getDiagram().setAttributeStyle(style, !isChecked());
+            refreshDiagram();
+        }
+    }
+
     private class ChangeAttributeVisibilityAction extends Action {
         private final ERDAttributeVisibility visibility;
 
@@ -796,7 +825,6 @@ public abstract class ERDEditorPart extends GraphicalEditorWithFlyoutPalette
         {
             getDiagram().setAttributeVisibility(visibility);
             refreshDiagram();
-            //this.setChecked(true);
         }
     }
 

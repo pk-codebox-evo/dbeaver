@@ -17,6 +17,8 @@
  */
 package org.jkiss.dbeaver.ui.search.data;
 
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.jface.operation.IRunnableWithProgress;
 import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.SashForm;
@@ -34,12 +36,15 @@ import org.jkiss.dbeaver.model.DBPPreferenceStore;
 import org.jkiss.dbeaver.model.navigator.*;
 import org.jkiss.dbeaver.model.struct.*;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.navigator.NavigatorUtils;
 import org.jkiss.dbeaver.ui.search.AbstractSearchPage;
 import org.jkiss.dbeaver.ui.navigator.database.CheckboxTreeManager;
 import org.jkiss.dbeaver.ui.navigator.database.DatabaseNavigatorTree;
 import org.jkiss.dbeaver.ui.navigator.database.load.TreeLoadNode;
+import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.utils.CommonUtils;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -70,6 +75,7 @@ public class SearchDataPage extends AbstractSearchPage {
 
 	@Override
 	public void createControl(Composite parent) {
+        super.createControl(parent);
         initializeDialogUnits(parent);
 
         Composite searchGroup = new Composite(parent, SWT.NONE);
@@ -108,12 +114,14 @@ public class SearchDataPage extends AbstractSearchPage {
 
             Group databasesGroup = UIUtils.createControlGroup(optionsGroup, "Databases", 1, GridData.FILL_BOTH, 0);
             gd = new GridData(GridData.FILL_BOTH);
-            gd.heightHint = 300;
+            //gd.heightHint = 300;
             databasesGroup.setLayoutData(gd);
             final DBNProject projectNode = core.getNavigatorModel().getRoot().getProject(core.getProjectRegistry().getActiveProject());
             DBNNode rootNode = projectNode == null ? core.getNavigatorModel().getRoot() : projectNode.getDatabases();
             dataSourceTree = new DatabaseNavigatorTree(databasesGroup, rootNode, SWT.SINGLE | SWT.CHECK);
-            dataSourceTree.setLayoutData(new GridData(GridData.FILL_BOTH));
+            gd = new GridData(GridData.FILL_BOTH);
+            gd.heightHint = 300;
+            dataSourceTree.setLayoutData(gd);
             final CheckboxTreeViewer viewer = (CheckboxTreeViewer) dataSourceTree.getViewer();
             viewer.addFilter(new ViewerFilter() {
                 @Override
@@ -159,7 +167,7 @@ public class SearchDataPage extends AbstractSearchPage {
         }
         {
             //new Label(searchGroup, SWT.NONE);
-            Composite optionsGroup2 = UIUtils.createControlGroup(optionsGroup, "Settings", 2, GridData.FILL_BOTH, 0);
+            Composite optionsGroup2 = UIUtils.createControlGroup(optionsGroup, "Settings", 2, GridData.FILL_HORIZONTAL, 0);
             optionsGroup2.setLayoutData(new GridData(GridData.FILL_HORIZONTAL | GridData.HORIZONTAL_ALIGN_BEGINNING | GridData.VERTICAL_ALIGN_BEGINNING));
 
             if (params.maxResults <= 0) {
@@ -217,22 +225,34 @@ public class SearchDataPage extends AbstractSearchPage {
                 }
             });
         }
+        final List<DBNNode> checkedNodes = new ArrayList<>();
         dataSourceTree.setEnabled(false);
-        getShell().getDisplay().asyncExec(new Runnable() {
-            @Override
-            public void run() {
-                List<DBNNode> checkedNodes = loadTreeState(store, PROP_SOURCES);
-
-                if (!checkedNodes.isEmpty()) {
-                    for (DBNNode node : checkedNodes) {
-                        ((CheckboxTreeViewer) dataSourceTree.getViewer()).setChecked(node, true);
-                    }
-                    checkboxTreeManager.updateCheckStates();
+        try {
+            container.getRunnableContext().run(true, true, new IRunnableWithProgress() {
+                @Override
+                public void run(IProgressMonitor monitor) throws InvocationTargetException, InterruptedException {
+                    checkedNodes.addAll(
+                        loadTreeState(RuntimeUtils.makeMonitor(monitor), store, PROP_SOURCES));
                 }
-                updateEnablement();
-                dataSourceTree.setEnabled(true);
+            });
+        } catch (InvocationTargetException e) {
+            UIUtils.showErrorDialog(getShell(), "Data sources load", "Error loading settings", e.getTargetException());
+        } catch (InterruptedException e) {
+            // ignore
+        }
+        if (!checkedNodes.isEmpty()) {
+            boolean first = true;
+            for (DBNNode node : checkedNodes) {
+                ((CheckboxTreeViewer) dataSourceTree.getViewer()).setChecked(node, true);
+                if (first) {
+                    dataSourceTree.getViewer().reveal(NavigatorUtils.getDataSourceNode(node));
+                    first = false;
+                }
             }
-        });
+            checkboxTreeManager.updateCheckStates();
+        }
+        updateEnablement();
+        dataSourceTree.setEnabled(true);
     }
 
     @Override
@@ -329,7 +349,7 @@ public class SearchDataPage extends AbstractSearchPage {
         if (!getCheckedSources().isEmpty()) {
             enabled = true;
         }
-        container.setSearchEnabled(enabled);
+        container.setPerformActionEnabled(enabled);
     }
 
 }

@@ -19,7 +19,6 @@
 package org.jkiss.dbeaver.ui.controls.resultset.view;
 
 import org.eclipse.jface.action.IMenuManager;
-import org.eclipse.jface.action.IToolBarManager;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.DisposeEvent;
 import org.eclipse.swt.events.DisposeListener;
@@ -36,11 +35,11 @@ import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.core.CoreCommands;
 import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
-import org.jkiss.dbeaver.model.data.DBDDisplayFormat;
 import org.jkiss.dbeaver.ui.ActionUtils;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.controls.resultset.IResultSetController;
 import org.jkiss.dbeaver.ui.controls.resultset.IResultSetPresentation;
+import org.jkiss.dbeaver.ui.controls.resultset.ResultSetCopySettings;
 import org.jkiss.dbeaver.ui.editors.sql.SQLEditor;
 
 /**
@@ -49,10 +48,13 @@ import org.jkiss.dbeaver.ui.editors.sql.SQLEditor;
  */
 public class EmptyPresentation implements IResultSetPresentation {
 
+    private IResultSetController controller;
     private Composite placeholder;
 
     @Override
     public void createPresentation(@NotNull final IResultSetController controller, @NotNull Composite parent) {
+        this.controller = controller;
+
         UIUtils.createHorizontalLine(parent);
         placeholder = new Canvas(parent, SWT.NONE);
         placeholder.setLayoutData(new GridData(GridData.FILL_BOTH));
@@ -90,6 +92,11 @@ public class EmptyPresentation implements IResultSetPresentation {
     }
 
     @Override
+    public IResultSetController getController() {
+        return controller;
+    }
+
+    @Override
     public Control getControl() {
         return placeholder;
     }
@@ -111,11 +118,6 @@ public class EmptyPresentation implements IResultSetPresentation {
 
     @Override
     public void updateValueView() {
-
-    }
-
-    @Override
-    public void fillToolbar(@NotNull IToolBarManager toolBar) {
 
     }
 
@@ -147,7 +149,7 @@ public class EmptyPresentation implements IResultSetPresentation {
 
     @Nullable
     @Override
-    public String copySelectionToString(boolean copyHeader, boolean copyRowNumbers, boolean cut, String delimiter, DBDDisplayFormat format) {
+    public String copySelectionToString(ResultSetCopySettings settings) {
         return null;
     }
 

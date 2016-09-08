@@ -493,7 +493,7 @@ public class GenericDataSource extends JDBCDataSource
             } finally {
                 dbResult.close();
             }
-            if (catalog == null && tmpSchemas.size() == 1 && (schemaFilters == null || schemaFilters.isEmpty())) {
+            if (catalog == null && tmpSchemas.size() == 1 && (schemaFilters == null || schemaFilters.isNotApplicable())) {
                 // Only one schema and no catalogs
                 // Most likely it is a fake one, let's skip it
                 // Anyway using "%" instead is ok
@@ -516,7 +516,7 @@ public class GenericDataSource extends JDBCDataSource
     }
 
     @Override
-    public boolean refreshObject(@NotNull DBRProgressMonitor monitor)
+    public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor)
         throws DBException
     {
         super.refreshObject(monitor);
@@ -528,7 +528,7 @@ public class GenericDataSource extends JDBCDataSource
 
         this.initialize(monitor);
 
-        return true;
+        return this;
     }
 
     @Nullable

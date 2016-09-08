@@ -23,9 +23,14 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.action.*;
+import org.eclipse.jface.bindings.keys.KeyStroke;
+import org.eclipse.jface.bindings.keys.ParseException;
 import org.eclipse.jface.commands.ActionHandler;
 import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.dialogs.IDialogSettings;
+import org.eclipse.jface.fieldassist.ContentProposalAdapter;
+import org.eclipse.jface.fieldassist.IContentProposalProvider;
+import org.eclipse.jface.fieldassist.IControlContentAdapter;
 import org.eclipse.jface.preference.PreferenceDialog;
 import org.eclipse.jface.resource.ImageDescriptor;
 import org.eclipse.jface.resource.StringConverter;
@@ -173,7 +178,7 @@ public class UIUtils {
                 column.pack();
                 totalWidth += column.getWidth();
             }
-            final Rectangle clientArea = table.getClientArea();
+            final Rectangle clientArea = table.getBounds();
             if (clientArea.width > 0 && totalWidth > clientArea.width) {
                 for (TableColumn column : columns) {
                     int colWidth = column.getWidth();
@@ -243,7 +248,7 @@ public class UIUtils {
                 column.pack();
                 totalWidth += column.getWidth();
             }
-            Rectangle clientArea = tree.getClientArea();
+            Rectangle clientArea = tree.getBounds();
             if (clientArea.isEmpty()) {
                 return;
             }
@@ -632,6 +637,12 @@ public class UIUtils {
         return button;
     }
 
+    public static void updateContributionItems(IContributionManager manager) {
+        for (IContributionItem item : manager.getItems()) {
+            item.update();
+        }
+    }
+
     @Nullable
     public static Shell getActiveShell()
     {
@@ -989,12 +1000,19 @@ public class UIUtils {
         }
     }
 
-    public static IDialogSettings getDialogSettings(String dialogId)
+    @NotNull
+    public static IDialogSettings getDialogSettings(@NotNull String dialogId)
     {
         IDialogSettings workbenchSettings = DBeaverActivator.getInstance().getDialogSettings();
-        IDialogSettings section = workbenchSettings.getSection(dialogId);
+        return getSettingsSection(workbenchSettings, dialogId);
+    }
+
+    @NotNull
+    public static IDialogSettings getSettingsSection(@NotNull IDialogSettings parent, @NotNull String sectionId)
+    {
+        IDialogSettings section = parent.getSection(sectionId);
         if (section == null) {
-            section = workbenchSettings.addNewSection(dialogId);
+            section = parent.addNewSection(sectionId);
         }
         return section;
     }
@@ -1511,6 +1529,21 @@ public class UIUtils {
 
     public static ImageDescriptor getShardImageDescriptor(String id) {
         return PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(id);
+    }
+
+    public static void installContentProposal(Control control, IControlContentAdapter contentAdapter, IContentProposalProvider provider) {
+        try {
+            KeyStroke keyStroke = KeyStroke.getInstance("Ctrl+Space");
+            final ContentProposalAdapter proposalAdapter = new ContentProposalAdapter(
+                control,
+                contentAdapter,
+                provider,
+                keyStroke,
+                new char[]{'.', '('});
+            proposalAdapter.setPopupSize(new Point(300, 200));
+        } catch (ParseException e) {
+            log.error("Error installing filters content assistant");
+        }
     }
 
 }

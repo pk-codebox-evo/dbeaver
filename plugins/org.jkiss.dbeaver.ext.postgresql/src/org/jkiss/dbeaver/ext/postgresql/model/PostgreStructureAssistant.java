@@ -29,7 +29,9 @@ import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
 import org.jkiss.dbeaver.model.impl.struct.AbstractObjectReference;
 import org.jkiss.dbeaver.model.impl.struct.RelationalObjectType;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.sql.SQLUtils;
 import org.jkiss.dbeaver.model.struct.DBSObject;
+import org.jkiss.dbeaver.model.struct.DBSObjectFilter;
 import org.jkiss.dbeaver.model.struct.DBSObjectReference;
 import org.jkiss.dbeaver.model.struct.DBSObjectType;
 import org.jkiss.utils.CommonUtils;
@@ -104,6 +106,20 @@ public class PostgreStructureAssistant extends JDBCStructureAssistant
                     nsList.add(schema);
                 }
             }
+            PostgreSchema pgCatalog = database.getCatalogSchema(session.getProgressMonitor());
+            if (pgCatalog != null) {
+                nsList.add(pgCatalog);
+            }
+        } else {
+            // Limit object search with available schemas (use filters - #648)
+            DBSObjectFilter schemaFilter = dataSource.getContainer().getObjectFilter(PostgreSchema.class, database, true);
+            if (schemaFilter != null && schemaFilter.isEnabled()) {
+                for (PostgreSchema schema : database.getSchemas(session.getProgressMonitor())) {
+                    if (schemaFilter.matches(schema.getName())) {
+                        nsList.add(schema);
+                    }
+                }
+            }
         }
         if (!caseSensitive) {
             objectNameMask = objectNameMask.toLowerCase(Locale.ENGLISH);
@@ -129,9 +145,9 @@ public class PostgreStructureAssistant extends JDBCStructureAssistant
 
         // Load tables
         try (JDBCPreparedStatement dbStat = session.prepareStatement(
-            "SELECT x.oid,x.relname,x.relnamespace FROM pg_catalog.pg_class x " +
+            "SELECT x.oid,x.relname,x.relnamespace,x.relkind FROM pg_catalog.pg_class x " +
                 "WHERE x.relkind in('r','v','m') AND x.relname LIKE ? " +
-                (CommonUtils.isEmpty(schema) ? "" : " AND x.relnamespace IN (?)") +
+                (CommonUtils.isEmpty(schema) ? "" : " AND x.relnamespace IN (" + SQLUtils.generateParamList(schema.size())+ ")") +
                 " ORDER BY x.relname LIMIT " + maxResults)) {
             dbStat.setString(1, tableNameMask);
             if (!CommonUtils.isEmpty(schema)) {
@@ -146,8 +162,12 @@ public class PostgreStructureAssistant extends JDBCStructureAssistant
                     final long schemaId = JDBCUtils.safeGetLong(dbResult, "relnamespace");
                     final long tableId = JDBCUtils.safeGetLong(dbResult, "oid");
                     final String tableName = JDBCUtils.safeGetString(dbResult, "relname");
+                    final PostgreClass.RelKind tableType = PostgreClass.RelKind.valueOf(JDBCUtils.safeGetString(dbResult, "relkind"));
                     final PostgreSchema tableSchema = dataSource.getDefaultInstance().getSchema(session.getProgressMonitor(), schemaId);
-                    objects.add(new AbstractObjectReference(tableName, tableSchema, null, RelationalObjectType.TYPE_TABLE) {
+                    objects.add(new AbstractObjectReference(tableName, tableSchema, null,
+                        tableType == PostgreClass.RelKind.r ? PostgreTable.class :
+                            (tableType == PostgreClass.RelKind.v ? PostgreView.class : PostgreMaterializedView.class),
+                        RelationalObjectType.TYPE_TABLE) {
                         @Override
                         public DBSObject resolveObject(DBRProgressMonitor monitor) throws DBException {
                             PostgreTableBase table = tableSchema.getTable(monitor, tableId);
@@ -169,9 +189,9 @@ public class PostgreStructureAssistant extends JDBCStructureAssistant
 
         // Load procedures
         try (JDBCPreparedStatement dbStat = session.prepareStatement(
-            "SELECT DISTINCT x.proname,x.pronamespace FROM pg_catalog.pg_proc x " +
+            "SELECT DISTINCT x.oid,x.proname,x.pronamespace FROM pg_catalog.pg_proc x " +
                 "WHERE x.proname LIKE ? " +
-                (CommonUtils.isEmpty(schema) ? "" : " AND x.pronamespace IN (?)") +
+                (CommonUtils.isEmpty(schema) ? "" : " AND x.pronamespace IN (" + SQLUtils.generateParamList(schema.size())+ ")") +
                 " ORDER BY x.proname LIMIT " + maxResults)) {
             dbStat.setString(1, procNameMask);
             if (!CommonUtils.isEmpty(schema)) {
@@ -184,15 +204,15 @@ public class PostgreStructureAssistant extends JDBCStructureAssistant
                         break;
                     }
                     final long schemaId = JDBCUtils.safeGetLong(dbResult, "pronamespace");
-                    final long procId = JDBCUtils.safeGetLong(dbResult, "oid");
                     final String procName = JDBCUtils.safeGetString(dbResult, "proname");
+                    final long procId = JDBCUtils.safeGetLong(dbResult, "oid");
                     final PostgreSchema procSchema = dataSource.getDefaultInstance().getSchema(session.getProgressMonitor(), schemaId);
-                    objects.add(new AbstractObjectReference(procName, procSchema, null, RelationalObjectType.TYPE_PROCEDURE) {
+                    objects.add(new AbstractObjectReference(procName, procSchema, null, PostgreProcedure.class, RelationalObjectType.TYPE_PROCEDURE) {
                         @Override
                         public DBSObject resolveObject(DBRProgressMonitor monitor) throws DBException {
-                            PostgreProcedure procedure = procSchema.getProcedure(monitor, procName);
+                            PostgreProcedure procedure = procSchema.getProcedure(monitor, procId);
                             if (procedure == null) {
-                                throw new DBException("Procedure '" + procName + "' not found in schema '" + procName + "'");
+                                throw new DBException("Procedure '" + procName + "' not found in schema '" + procSchema.getName() + "'");
                             }
                             return procedure;
                         }
@@ -211,7 +231,7 @@ public class PostgreStructureAssistant extends JDBCStructureAssistant
         try (JDBCPreparedStatement dbStat = session.prepareStatement(
             "SELECT x.oid,x.conname,x.connamespace FROM pg_catalog.pg_constraint x " +
                 "WHERE x.conname LIKE ? " +
-                (CommonUtils.isEmpty(schema) ? "" : " AND x.connamespace IN (?)") +
+                (CommonUtils.isEmpty(schema) ? "" : " AND x.connamespace IN (" + SQLUtils.generateParamList(schema.size())+ ")") +
                 " ORDER BY x.conname LIMIT " + maxResults)) {
             dbStat.setString(1, constrNameMask);
             if (!CommonUtils.isEmpty(schema)) {
@@ -227,7 +247,7 @@ public class PostgreStructureAssistant extends JDBCStructureAssistant
                     final long constrId = JDBCUtils.safeGetLong(dbResult, "oid");
                     final String constrName = JDBCUtils.safeGetString(dbResult, "conname");
                     final PostgreSchema constrSchema = dataSource.getDefaultInstance().getSchema(session.getProgressMonitor(), schemaId);
-                    objects.add(new AbstractObjectReference(constrName, constrSchema, null, RelationalObjectType.TYPE_TABLE) {
+                    objects.add(new AbstractObjectReference(constrName, constrSchema, null, PostgreTableConstraintBase.class, RelationalObjectType.TYPE_TABLE) {
                         @Override
                         public DBSObject resolveObject(DBRProgressMonitor monitor) throws DBException {
                             final PostgreTableConstraintBase constraint = PostgreUtils.getObjectById(monitor, constrSchema.constraintCache, constrSchema, constrId);
@@ -252,7 +272,7 @@ public class PostgreStructureAssistant extends JDBCStructureAssistant
             "SELECT x.attname,x.attrelid,x.atttypid,c.relnamespace " +
                 "FROM pg_catalog.pg_attribute x, pg_catalog.pg_class c\n" +
                 "WHERE c.oid=x.attrelid AND x.attname LIKE ? " +
-                (CommonUtils.isEmpty(schema) ? "" : " AND c.relnamespace IN (?)") +
+                (CommonUtils.isEmpty(schema) ? "" : " AND c.relnamespace IN (" + SQLUtils.generateParamList(schema.size())+ ")") +
                 " ORDER BY x.attname LIMIT " + maxResults)) {
             dbStat.setString(1, columnNameMask);
             if (!CommonUtils.isEmpty(schema)) {
@@ -272,7 +292,7 @@ public class PostgreStructureAssistant extends JDBCStructureAssistant
                         log.debug("Schema '" + schemaId + "' not found");
                         continue;
                     }
-                    objects.add(new AbstractObjectReference(attributeName, constrSchema, null, RelationalObjectType.TYPE_TABLE) {
+                    objects.add(new AbstractObjectReference(attributeName, constrSchema, null, PostgreTableBase.class, RelationalObjectType.TYPE_TABLE) {
                         @Override
                         public DBSObject resolveObject(DBRProgressMonitor monitor) throws DBException {
                             final PostgreTableBase table = PostgreUtils.getObjectById(monitor, constrSchema.tableCache, constrSchema, tableId);

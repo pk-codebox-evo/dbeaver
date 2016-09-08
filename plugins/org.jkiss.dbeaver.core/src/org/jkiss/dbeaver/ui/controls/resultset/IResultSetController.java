@@ -18,7 +18,9 @@
 
 package org.jkiss.dbeaver.ui.controls.resultset;
 
+import org.eclipse.jface.action.IContributionManager;
 import org.eclipse.jface.action.IMenuManager;
+import org.eclipse.jface.dialogs.IDialogSettings;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.ui.IWorkbenchPartSite;
@@ -36,7 +38,8 @@ import org.jkiss.dbeaver.model.struct.DBSDataContainer;
 import java.util.List;
 
 /**
- * IResultSetController
+ * ResultSet controller.
+ * This interface is not supposed to be implemented by clients.
  */
 public interface IResultSetController extends DBPContextProvider {
 
@@ -57,9 +60,6 @@ public interface IResultSetController extends DBPContextProvider {
     @NotNull
     DBDDataReceiver getDataReceiver();
 
-    @NotNull
-    IResultSetFilterManager getFilterManager();
-
     boolean hasData();
 
     boolean isHasMoreData();
@@ -73,11 +73,25 @@ public interface IResultSetController extends DBPContextProvider {
     @NotNull
     DBPPreferenceStore getPreferenceStore();
 
+    @NotNull
+    IDialogSettings getViewerSettings();
+
+    @NotNull
+    Color getDefaultBackground();
+
+    @NotNull
+    Color getDefaultForeground();
+
     boolean applyChanges(@Nullable DBRProgressMonitor monitor);
 
     void rejectChanges();
 
     List<DBEPersistAction> generateChangesScript(@NotNull DBRProgressMonitor monitor);
+
+    /**
+     * Refreshes data. Reverts all changes and clears filters.
+     */
+    void refresh();
 
     /**
      * Refreshes data. Reads data from underlying data container
@@ -110,6 +124,9 @@ public interface IResultSetController extends DBPContextProvider {
 
     void setCurrentRow(@Nullable ResultSetRow row);
 
+    ////////////////////////////////////////
+    // Navigation & history
+
     void navigateAssociation(@NotNull DBRProgressMonitor monitor, @NotNull DBDAttributeBinding attr, @NotNull ResultSetRow row, boolean newWindow)
         throws DBException;
 
@@ -119,21 +136,31 @@ public interface IResultSetController extends DBPContextProvider {
 
     void navigateHistory(int position);
 
-    void updateValueView();
-
-    void updateEditControls();
-
-    void fireResultSetChange();
-
     void setStatus(String message, boolean error);
 
     void updateStatusMessage();
 
-    Color getDefaultBackground();
+    void updateEditControls();
 
-    Color getDefaultForeground();
+    ////////////////////////////////////////
+    // Presentation & panels
 
+    /**
+     * Active presentation
+     */
+    @NotNull
     IResultSetPresentation getActivePresentation();
+
+    IResultSetPanel getVisiblePanel();
+
+    IResultSetPanel[] getActivePanels();
+
+    void activatePanel(String id, boolean setActive, boolean showPanels);
+
+    void updatePanelActions();
+
+    void updatePanelsContent();
+
 
     /**
      * Enable/disable viewer actions. May be used by editors to "lock" RSV actions like navigation, edit, etc.

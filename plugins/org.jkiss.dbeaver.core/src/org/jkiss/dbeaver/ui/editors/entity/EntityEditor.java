@@ -24,13 +24,10 @@ import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
-import org.eclipse.swt.events.SelectionListener;
+import org.eclipse.swt.graphics.Point;
+import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.layout.RowLayout;
-import org.eclipse.swt.widgets.Composite;
-import org.eclipse.swt.widgets.Control;
-import org.eclipse.swt.widgets.Display;
-import org.eclipse.swt.widgets.Link;
+import org.eclipse.swt.widgets.*;
 import org.eclipse.ui.*;
 import org.eclipse.ui.views.properties.IPropertySheetPage;
 import org.jkiss.code.Nullable;
@@ -39,20 +36,21 @@ import org.jkiss.dbeaver.DBeaverPreferences;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.CoreMessages;
 import org.jkiss.dbeaver.core.DBeaverUI;
-import org.jkiss.dbeaver.model.*;
+import org.jkiss.dbeaver.model.DBPDataSourceContainer;
+import org.jkiss.dbeaver.model.DBPObject;
+import org.jkiss.dbeaver.model.DBPStatefulObject;
+import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.edit.DBECommand;
 import org.jkiss.dbeaver.model.edit.DBECommandContext;
 import org.jkiss.dbeaver.model.exec.DBCException;
 import org.jkiss.dbeaver.model.impl.edit.DBECommandAdapter;
+import org.jkiss.dbeaver.model.navigator.DBNDatabaseFolder;
 import org.jkiss.dbeaver.model.navigator.DBNDatabaseNode;
 import org.jkiss.dbeaver.model.navigator.DBNNode;
-import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.runtime.DBRRunnableWithProgress;
+import org.jkiss.dbeaver.model.runtime.*;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.registry.editor.EntityEditorDescriptor;
 import org.jkiss.dbeaver.registry.editor.EntityEditorsRegistry;
-import org.jkiss.dbeaver.model.runtime.AbstractJob;
-import org.jkiss.dbeaver.model.runtime.ProxyProgressMonitor;
 import org.jkiss.dbeaver.ui.*;
 import org.jkiss.dbeaver.ui.actions.navigator.NavigatorHandlerObjectOpen;
 import org.jkiss.dbeaver.ui.controls.ProgressPageControl;
@@ -71,6 +69,7 @@ import org.jkiss.utils.CommonUtils;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
+import java.util.List;
 
 /**
  * EntityEditor
@@ -100,6 +99,7 @@ public class EntityEditor extends MultiPageDatabaseEditor
     private boolean hasPropertiesEditor;
     private Map<IEditorPart, IEditorActionBarContributor> actionContributors = new HashMap<>();
     private volatile boolean saveInProgress = false;
+    private Menu breadcrumbsMenu;
 
     public EntityEditor()
     {
@@ -146,6 +146,10 @@ public class EntityEditor extends MultiPageDatabaseEditor
     @Override
     public void dispose()
     {
+        if (breadcrumbsMenu != null) {
+            breadcrumbsMenu.dispose();
+            breadcrumbsMenu = null;
+        }
         for (Map.Entry<IEditorPart, IEditorActionBarContributor> entry : actionContributors.entrySet()) {
             GlobalContributorManager.getInstance().removeContributor(entry.getValue(), entry.getKey());
         }
@@ -739,9 +743,8 @@ public class EntityEditor extends MultiPageDatabaseEditor
     @Override
     protected Control createTopRightControl(Composite composite) {
         // Path
-        Composite breadcrumbsPanel = new Composite(composite, SWT.NONE);
+        ToolBar breadcrumbsPanel = new ToolBar(composite, SWT.HORIZONTAL | SWT.RIGHT);
         breadcrumbsPanel.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-        breadcrumbsPanel.setLayout(new RowLayout());
 
         // Make base node path
         DBNDatabaseNode node = getEditorInput().getNavigatorNode();
@@ -753,36 +756,70 @@ public class EntityEditor extends MultiPageDatabaseEditor
             }
         }
         for (final DBNDatabaseNode databaseNode : nodeList) {
-            createPathRow(
-                breadcrumbsPanel,
-                databaseNode.getNodeIconDefault(),
-                databaseNode.getNodeType(),
-                databaseNode.getNodeName(),
-                databaseNode == node ? null : new SelectionAdapter() {
-                    @Override
-                    public void widgetSelected(SelectionEvent e)
-                    {
-                        NavigatorHandlerObjectOpen.openEntityEditor(databaseNode, null, PlatformUI.getWorkbench().getActiveWorkbenchWindow());
-                    }
-                });
+            createPathRow(breadcrumbsPanel, databaseNode);
         }
 
 
         return breadcrumbsPanel;
     }
 
-    private void createPathRow(Composite infoGroup, DBPImage image, String label, String value, @Nullable SelectionListener selectionListener)
-    {
-        UIUtils.createLabel(infoGroup, image);
+    private static final int MAX_BREADCRUMBS_MENU_ITEM = 300;
 
-        Link objectLink = new Link(infoGroup, SWT.NONE);
-        if (selectionListener == null) {
-            objectLink.setText(value);
-            objectLink.setToolTipText(label);
+    private void createPathRow(ToolBar infoGroup, final DBNDatabaseNode databaseNode)
+    {
+        final DBNDatabaseNode curNode = getEditorInput().getNavigatorNode();
+
+        final ToolItem item = new ToolItem(infoGroup, databaseNode instanceof DBNDatabaseFolder ? SWT.DROP_DOWN : SWT.PUSH);
+        item.setText(databaseNode.getNodeName());
+        item.setImage(DBeaverIcons.getImage(databaseNode.getNodeIconDefault()));
+
+        if (databaseNode == curNode) {
+            item.setToolTipText(databaseNode.getNodeType());
+            item.setEnabled(false);
         } else {
-            objectLink.setText("<A>" + value + "</A>   ");
-            objectLink.addSelectionListener(selectionListener);
-            objectLink.setToolTipText("Open " + label + " Editor");
+            item.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent e)
+                {
+                    if (e.detail == SWT.ARROW) {
+                        int itemCount = 0;
+                        if (breadcrumbsMenu != null) {
+                            breadcrumbsMenu.dispose();
+                        }
+                        breadcrumbsMenu = new Menu(item.getParent().getShell());
+                        try {
+                            for (final DBNDatabaseNode folderItem : databaseNode.getChildren(VoidProgressMonitor.INSTANCE)) {
+                                MenuItem childItem = new MenuItem(breadcrumbsMenu, SWT.NONE);
+                                childItem.setText(folderItem.getName());
+//                                childItem.setImage(DBeaverIcons.getImage(folderItem.getNodeIconDefault()));
+                                if (folderItem == curNode) {
+                                    childItem.setEnabled(false);
+                                }
+                                childItem.addSelectionListener(new SelectionAdapter() {
+                                    @Override
+                                    public void widgetSelected(SelectionEvent e) {
+                                        NavigatorHandlerObjectOpen.openEntityEditor(folderItem, null, PlatformUI.getWorkbench().getActiveWorkbenchWindow());
+                                    }
+                                });
+                                itemCount++;
+                                if (itemCount >= MAX_BREADCRUMBS_MENU_ITEM) {
+                                    break;
+                                }
+                            }
+                        } catch (Throwable e1) {
+                            log.error(e1);
+                        }
+
+                        Rectangle rect = item.getBounds();
+                        Point pt = item.getParent().toDisplay(new Point(rect.x, rect.y));
+                        breadcrumbsMenu.setLocation(pt.x, pt.y + rect.height);
+                        breadcrumbsMenu.setVisible(true);
+                    } else {
+                        NavigatorHandlerObjectOpen.openEntityEditor(databaseNode, null, PlatformUI.getWorkbench().getActiveWorkbenchWindow());
+                    }
+                }
+            });
+            item.setToolTipText("Open " + databaseNode.getNodeType() + " Editor");
         }
     }
 

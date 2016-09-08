@@ -18,10 +18,10 @@
 
 package org.jkiss.dbeaver.ui.controls.resultset;
 
-import org.eclipse.jface.bindings.keys.KeyStroke;
-import org.eclipse.jface.bindings.keys.ParseException;
 import org.eclipse.jface.dialogs.ControlEnableState;
-import org.eclipse.jface.fieldassist.*;
+import org.eclipse.jface.fieldassist.ContentProposal;
+import org.eclipse.jface.fieldassist.IContentProposal;
+import org.eclipse.jface.fieldassist.IContentProposalProvider;
 import org.eclipse.jface.text.Document;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.StyledText;
@@ -39,6 +39,7 @@ import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.CoreMessages;
+import org.jkiss.dbeaver.core.DBeaverUI;
 import org.jkiss.dbeaver.model.DBIcon;
 import org.jkiss.dbeaver.model.DBPImage;
 import org.jkiss.dbeaver.model.DBPImageProvider;
@@ -56,9 +57,11 @@ import org.jkiss.dbeaver.ui.ActionUtils;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.UIIcon;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.controls.StyledTextContentAdapter;
 import org.jkiss.dbeaver.ui.editors.StringEditorInput;
 import org.jkiss.dbeaver.ui.editors.SubEditorSite;
 import org.jkiss.dbeaver.ui.editors.sql.SQLEditorBase;
+import org.jkiss.dbeaver.ui.editors.sql.handlers.OpenNewSQLEditorHandler;
 import org.jkiss.dbeaver.ui.editors.sql.syntax.SQLCompletionProcessor;
 import org.jkiss.dbeaver.ui.editors.sql.syntax.SQLWordPartDetector;
 import org.jkiss.dbeaver.utils.GeneralUtils;
@@ -108,6 +111,7 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
 
     private String prevQuery = null;
     private final List<String> filtersHistory = new ArrayList<>();
+    private Menu historyMenu;
 
     public ResultSetFilterPanel(ResultSetViewer rsv) {
         super(rsv.getControl(), SWT.NONE);
@@ -164,7 +168,7 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
                         e.gc.setForeground(shadowColor);
                         e.gc.setFont(hintFont);
                         e.gc.drawText(supportsDataFilter ?
-                            "Enter a SQL expression to filter results" :
+                            "Enter a SQL expression to filter results (use Ctrl+Space)" :
                             "Data filter is not supported",
                             2, 0);
                         e.gc.setFont(null);
@@ -191,32 +195,7 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
                 }
             });
 
-
-            try {
-                KeyStroke keyStroke = KeyStroke.getInstance("Ctrl+Space");
-                final ContentProposalAdapter proposalAdapter = new ContentProposalAdapter(
-                    filtersText,
-                    new FilterContentAdapter(),
-                    this,
-                    keyStroke,
-                    new char[]{'.', '('});
-                proposalAdapter.setPopupSize(new Point(300, 200));
-            } catch (ParseException e) {
-                log.error("Error installing filters content assistant");
-            }
-/*
-            this.filtersText.addFocusListener(new FocusListener() {
-                @Override
-                public void focusGained(FocusEvent e) {
-
-                }
-
-                @Override
-                public void focusLost(FocusEvent e) {
-
-                }
-            });
-*/
+            UIUtils.installContentProposal(filtersText, new StyledTextContentAdapter(filtersText), this);
         }
 
         // Handle all shortcuts by filters editor, not by host editor
@@ -301,6 +280,10 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
         this.addDisposeListener(new DisposeListener() {
             @Override
             public void widgetDisposed(DisposeEvent e) {
+                if (historyMenu != null) {
+                    historyMenu.dispose();
+                    historyMenu = null;
+                }
                 UIUtils.dispose(sizingGC);
                 UIUtils.dispose(hintFont);
             }
@@ -360,7 +343,7 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
                 filtersEnableState = null;
             }
             int historyPosition = viewer.getHistoryPosition();
-            List<ResultSetViewer.StateItem> stateHistory = viewer.getStateHistory();
+            List<ResultSetViewer.HistoryStateItem> stateHistory = viewer.getStateHistory();
 
             String filterText = filtersText.getText();
             filtersText.setEnabled(supportsDataFilter);
@@ -486,7 +469,15 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
 
         Label iconLabel = new Label(panel, SWT.NONE);
         iconLabel.setImage(DBeaverIcons.getImage(getActiveObjectImage()));
+        iconLabel.setToolTipText("Click to open query in editor");
         iconLabel.setLayoutData(new GridData(GridData.VERTICAL_ALIGN_BEGINNING));
+        iconLabel.setCursor(getDisplay().getSystemCursor(SWT.CURSOR_HAND));
+        iconLabel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseUp(MouseEvent e) {
+                openEditorForActiveQuery();
+            }
+        });
         Composite editorPH = new Composite(panel, SWT.NONE);
         editorPH.setLayoutData(new GridData(GridData.FILL_BOTH));
         editorPH.setLayout(new FillLayout());
@@ -520,6 +511,22 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
         });
 
         return textWidget;
+    }
+
+    private void openEditorForActiveQuery() {
+        DBSDataContainer dataContainer = viewer.getDataContainer();
+        String editorName;
+        if (dataContainer instanceof DBSEntity) {
+            editorName = dataContainer.getName();
+        } else {
+            editorName = "Query";
+        }
+        OpenNewSQLEditorHandler.openSQLConsole(
+            DBeaverUI.getActiveWorkbenchWindow(),
+            dataContainer == null ? null : dataContainer.getDataSource().getContainer(),
+            editorName,
+            getActiveQueryText()
+        );
     }
 
     @Override
@@ -600,6 +607,12 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
             if (popup != null) {
                 popup.dispose();
             }
+
+            if ((e.stateMask & SWT.CTRL) != 0) {
+                openEditorForActiveQuery();
+                return;
+            }
+
             popup = new Shell(getShell(), SWT.ON_TOP | SWT.RESIZE);
             popup.setLayout(new FillLayout());
             Control editControl;
@@ -895,18 +908,19 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
         @Override
         public void widgetSelected(SelectionEvent e) {
             int historyPosition = viewer.getHistoryPosition();
-            List<ResultSetViewer.StateItem> stateHistory = viewer.getStateHistory();
+            List<ResultSetViewer.HistoryStateItem> stateHistory = viewer.getStateHistory();
             if (e.detail == SWT.ARROW) {
                 ToolItem item = (ToolItem) e.widget;
                 Rectangle rect = item.getBounds();
                 Point pt = item.getParent().toDisplay(new Point(rect.x, rect.y));
 
-                Menu menu = new Menu(dropdown.getParent().getShell());
-                menu.setLocation(pt.x, pt.y + rect.height);
-                menu.setVisible(true);
+                if (historyMenu != null) {
+                    historyMenu.dispose();
+                }
+                historyMenu = new Menu(dropdown.getParent().getShell());
                 for (int i = historyPosition + (back ? -1 : 1); i >= 0 && i < stateHistory.size(); i += back ? -1 : 1) {
-                    MenuItem mi = new MenuItem(menu, SWT.NONE);
-                    ResultSetViewer.StateItem state = stateHistory.get(i);
+                    MenuItem mi = new MenuItem(historyMenu, SWT.NONE);
+                    ResultSetViewer.HistoryStateItem state = stateHistory.get(i);
                     mi.setText(state.describeState());
                     final int statePosition = i;
                     mi.addSelectionListener(new SelectionAdapter() {
@@ -916,65 +930,12 @@ class ResultSetFilterPanel extends Composite implements IContentProposalProvider
                         }
                     });
                 }
+                historyMenu.setLocation(pt.x, pt.y + rect.height);
+                historyMenu.setVisible(true);
             } else {
                 int newPosition = back ? historyPosition - 1 : historyPosition + 1;
                 viewer.navigateHistory(newPosition);
             }
-        }
-    }
-
-    class FilterContentAdapter implements IControlContentAdapter, IControlContentAdapter2 {
-
-        @Override
-        public String getControlContents(Control control) {
-            return filtersText.getText();
-        }
-
-        @Override
-        public void setControlContents(Control control, String text, int cursorPosition) {
-            filtersText.setText(text);
-            filtersText.setSelection(cursorPosition, cursorPosition);
-        }
-
-        @Override
-        public void insertControlContents(Control control, String text, int cursorPosition) {
-            Point selection = filtersText.getSelection();
-            filtersText.insert(text);
-            // Insert will leave the cursor at the end of the inserted text. If this
-            // is not what we wanted, reset the selection.
-            if (cursorPosition <= text.length()) {
-                filtersText.setSelection(selection.x + cursorPosition, selection.x + cursorPosition);
-            }
-        }
-
-        @Override
-        public int getCursorPosition(Control control) {
-            return filtersText.getCaretOffset();
-        }
-
-        @Override
-        public Rectangle getInsertionBounds(Control control) {
-            Point caretOrigin = filtersText.getLocationAtOffset(filtersText.getCaretOffset());
-            // We fudge the y pixels due to problems with getCaretLocation
-            // See https://bugs.eclipse.org/bugs/show_bug.cgi?id=52520
-            return new Rectangle(
-                caretOrigin.x + filtersText.getClientArea().x,
-                caretOrigin.y + filtersText.getClientArea().y + 3, 1, filtersText.getLineHeight());
-        }
-
-        @Override
-        public void setCursorPosition(Control control, int position) {
-            filtersText.setSelection(new Point(position, position));
-        }
-
-        @Override
-        public Point getSelection(Control control) {
-            return filtersText.getSelection();
-        }
-
-        @Override
-        public void setSelection(Control control, Point range) {
-            filtersText.setSelection(range);
         }
     }
 

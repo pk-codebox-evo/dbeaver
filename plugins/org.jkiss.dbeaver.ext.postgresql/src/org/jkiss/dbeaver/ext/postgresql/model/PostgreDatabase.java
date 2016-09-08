@@ -45,9 +45,7 @@ import org.jkiss.dbeaver.model.struct.rdb.DBSCatalog;
 import org.jkiss.utils.LongKeyMap;
 
 import java.sql.SQLException;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 /**
  * PostgreDatabase
@@ -196,7 +194,7 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
 
     @NotNull
     @Override
-    public Collection<? extends DBCExecutionContext> getAllContexts() {
+    public DBCExecutionContext[] getAllContexts() {
         return dataSource.getAllContexts();
     }
 
@@ -344,7 +342,7 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
     }
 
     @Override
-    public boolean refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
+    public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
         authIdCache.clearCache();
         accessMethodCache.clearCache();
         languageCache.clearCache();
@@ -353,7 +351,7 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
         schemaCache.clearCache();
 
         cacheDataTypes(monitor);
-        return true;
+        return this;
     }
 
     public Collection<PostgreAuthId> getUsers(DBRProgressMonitor monitor) throws DBException {
@@ -439,9 +437,13 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
             // In some cases ResultSetMetadata returns it as []
             typeName = "_" + typeName.substring(0, typeName.length() - 2);
         }
+        String alias = PostgreConstants.DATA_TYPE_ALIASES.get(typeName);
+        if (alias != null) {
+            typeName = alias;
+        }
         {
             // First check system catalog
-            final PostgreSchema schema = schemaCache.getCachedObject(PostgreConstants.CATALOG_SCHEMA_NAME);
+            final PostgreSchema schema = getCatalogSchema();
             if (schema != null) {
                 final PostgreDataType dataType = schema.dataTypeCache.getCachedObject(typeName);
                 if (dataType != null) {
@@ -648,7 +650,7 @@ public class PostgreDatabase implements DBSInstance, DBSCatalog, DBPRefreshableO
 */
             StringBuilder catalogQuery = new StringBuilder("SELECT n.oid,n.* FROM pg_catalog.pg_namespace n");
             DBSObjectFilter catalogFilters = owner.getDataSource().getContainer().getObjectFilter(PostgreSchema.class, null, false);
-            if (catalogFilters != null && !catalogFilters.isEmpty()) {
+            if (catalogFilters != null && !catalogFilters.isNotApplicable()) {
                 catalogFilters = new DBSObjectFilter(catalogFilters);
                 // Always read catalog schema
                 catalogFilters.addInclude(PostgreConstants.CATALOG_SCHEMA_NAME);

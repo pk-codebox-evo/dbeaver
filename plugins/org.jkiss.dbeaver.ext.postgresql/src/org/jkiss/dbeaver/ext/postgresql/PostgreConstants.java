@@ -26,6 +26,11 @@ import org.jkiss.dbeaver.model.struct.DBSEntityConstraintType;
 import org.jkiss.dbeaver.model.struct.DBSEntityType;
 import org.jkiss.dbeaver.model.struct.DBSObjectState;
 
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
 /**
  * PostgreConstants
  */
@@ -71,4 +76,29 @@ public class PostgreConstants {
     public static final String PG_INSTALL_PROP_BRANDING = "Branding";
     public static final String PG_INSTALL_PROP_DATA_DIRECTORY = "Data Directory";
 
+    public static Set<String> SERIAL_TYPES = new HashSet<>();
+    public static Map<String, String> DATA_TYPE_ALIASES = new HashMap<>();
+
+    static {
+        DATA_TYPE_ALIASES.put("integer", "int4");
+        DATA_TYPE_ALIASES.put("int", "int4");
+        DATA_TYPE_ALIASES.put("bigint", "int8");
+        DATA_TYPE_ALIASES.put("bigserial", "int8");
+        DATA_TYPE_ALIASES.put("smallint", "int2");
+
+        DATA_TYPE_ALIASES.put("double precision", "float8");
+        DATA_TYPE_ALIASES.put("real", "float4");
+
+        DATA_TYPE_ALIASES.put("serial", "int4");
+        DATA_TYPE_ALIASES.put("serial8", "int8");
+        DATA_TYPE_ALIASES.put("serial2", "int2");
+        DATA_TYPE_ALIASES.put("smallserial", "int2");
+        DATA_TYPE_ALIASES.put("bigserial", "int8");
+
+        SERIAL_TYPES.add("serial");
+        SERIAL_TYPES.add("serial8");
+        SERIAL_TYPES.add("serial2");
+        SERIAL_TYPES.add("smallserial");
+        SERIAL_TYPES.add("bigserial");
+    }
 }

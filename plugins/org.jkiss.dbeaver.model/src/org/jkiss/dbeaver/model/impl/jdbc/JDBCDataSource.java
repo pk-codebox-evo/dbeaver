@@ -77,7 +77,7 @@ public abstract class JDBCDataSource
     @Nullable
     protected JDBCExecutionContext metaContext;
     @NotNull
-    protected final List<JDBCExecutionContext> allContexts = new ArrayList<>();
+    private final List<JDBCExecutionContext> allContexts = new ArrayList<>();
     @NotNull
     protected volatile DBPDataSourceInfo dataSourceInfo;
     protected volatile SQLDialect sqlDialect;
@@ -280,8 +280,22 @@ public abstract class JDBCDataSource
 
     @NotNull
     @Override
-    public Collection<JDBCExecutionContext> getAllContexts() {
-        return allContexts;
+    public JDBCExecutionContext[] getAllContexts() {
+        synchronized (allContexts) {
+            return allContexts.toArray(new JDBCExecutionContext[allContexts.size()]);
+        }
+    }
+
+    void addContext(JDBCExecutionContext context) {
+        synchronized (allContexts) {
+            allContexts.add(context);
+        }
+    }
+
+    boolean removeContext(JDBCExecutionContext context) {
+        synchronized (allContexts) {
+            return allContexts.remove(context);
+        }
     }
 
     @Override
@@ -378,9 +392,9 @@ public abstract class JDBCDataSource
     }
 
     @Override
-    public boolean refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
+    public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
         this.dataSourceInfo = new JDBCDataSourceInfo(container);
-        return true;
+        return this;
     }
 
     @Nullable

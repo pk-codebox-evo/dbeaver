@@ -25,6 +25,7 @@ import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
+import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.core.DBeaverNature;
 import org.jkiss.dbeaver.model.*;
 import org.jkiss.dbeaver.model.connection.DBPConnectionBootstrap;
@@ -434,7 +435,11 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
                     // Add nature
                     if (!ArrayUtils.contains(natureIds, DBeaverNature.NATURE_ID)) {
                         description.setNatureIds(ArrayUtils.add(String.class, natureIds, DBeaverNature.NATURE_ID));
-                        project.setDescription(description, new NullProgressMonitor());
+                        try {
+                            project.setDescription(description, new NullProgressMonitor());
+                        } catch (CoreException e) {
+                            log.debug("Can't set project nature", e);
+                        }
                     }
                 }
             }
@@ -596,11 +601,13 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
             if (!CommonUtils.isEmpty(filterMappings)) {
                 xml.startElement(RegistryConstants.TAG_FILTERS);
                 for (DataSourceDescriptor.FilterMapping filter : filterMappings) {
-                    if (filter.defaultFilter != null) {
+                    if (filter.defaultFilter != null && !filter.defaultFilter.isEmpty()) {
                         saveObjectFiler(xml, filter.typeName, null, filter.defaultFilter);
                     }
                     for (Map.Entry<String,DBSObjectFilter> cf : filter.customFilters.entrySet()) {
-                        saveObjectFiler(xml, filter.typeName, cf.getKey(), cf.getValue());
+                        if (!cf.getValue().isEmpty()) {
+                            saveObjectFiler(xml, filter.typeName, cf.getKey(), cf.getValue());
+                        }
                     }
                 }
                 xml.endElement();
@@ -668,6 +675,23 @@ public class DataSourceRegistry implements DBPDataSourceRegistry
     public IProject getProject()
     {
         return project;
+    }
+
+    /**
+     * Find data source in all available registries
+     */
+    public static DataSourceDescriptor findDataSource(String dataSourceId) {
+        ProjectRegistry projectRegistry = DBeaverCore.getInstance().getProjectRegistry();
+        for (IProject project : DBeaverCore.getInstance().getLiveProjects()) {
+            DataSourceRegistry dataSourceRegistry = projectRegistry.getDataSourceRegistry(project);
+            if (dataSourceRegistry != null) {
+                DataSourceDescriptor dataSourceContainer = dataSourceRegistry.getDataSource(dataSourceId);
+                if (dataSourceContainer != null) {
+                    return dataSourceContainer;
+                }
+            }
+        }
+        return null;
     }
 
     private static class ParseResults {

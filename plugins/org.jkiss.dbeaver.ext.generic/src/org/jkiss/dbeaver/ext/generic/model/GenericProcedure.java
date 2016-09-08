@@ -21,6 +21,7 @@ import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.generic.GenericConstants;
 import org.jkiss.dbeaver.ext.generic.model.meta.GenericMetaObject;
+import org.jkiss.dbeaver.model.DBPRefreshableObject;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
@@ -28,7 +29,8 @@ import org.jkiss.dbeaver.model.impl.jdbc.JDBCConstants;
 import org.jkiss.dbeaver.model.impl.struct.AbstractProcedure;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.struct.DBSObjectUnique;
+import org.jkiss.dbeaver.model.DBPUniqueObject;
+import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.rdb.DBSProcedureParameterKind;
 import org.jkiss.dbeaver.model.struct.rdb.DBSProcedureType;
 import org.jkiss.utils.CommonUtils;
@@ -45,7 +47,7 @@ import java.util.regex.Pattern;
 /**
  * GenericProcedure
  */
-public class GenericProcedure extends AbstractProcedure<GenericDataSource, GenericStructContainer> implements GenericScriptObject, DBSObjectUnique
+public class GenericProcedure extends AbstractProcedure<GenericDataSource, GenericStructContainer> implements GenericScriptObject, DBPUniqueObject, DBPRefreshableObject
 {
     private static final Pattern PATTERN_COL_NAME_NUMERIC = Pattern.compile("\\$?([0-9]+)");
 
@@ -268,5 +270,11 @@ public class GenericProcedure extends AbstractProcedure<GenericDataSource, Gener
             source = getDataSource().getMetaModel().getProcedureDDL(monitor, this);
         }
         return source;
+    }
+
+    @Override
+    public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
+        source = null;
+        return this;
     }
 }

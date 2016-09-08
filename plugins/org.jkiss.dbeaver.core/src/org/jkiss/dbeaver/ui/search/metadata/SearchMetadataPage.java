@@ -17,7 +17,9 @@
  */
 package org.jkiss.dbeaver.ui.search.metadata;
 
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
+import org.eclipse.jface.operation.IRunnableWithProgress;
 import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.SashForm;
@@ -36,11 +38,14 @@ import org.jkiss.dbeaver.model.runtime.DBRProgressListener;
 import org.jkiss.dbeaver.model.struct.*;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.navigator.NavigatorUtils;
 import org.jkiss.dbeaver.ui.search.AbstractSearchPage;
 import org.jkiss.dbeaver.ui.navigator.database.DatabaseNavigatorTree;
 import org.jkiss.dbeaver.ui.navigator.database.load.TreeLoadNode;
+import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.utils.CommonUtils;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 import java.util.List;
 
@@ -73,6 +78,8 @@ public class SearchMetadataPage extends AbstractSearchPage {
 
 	@Override
 	public void createControl(Composite parent) {
+        super.createControl(parent);
+
         initializeDialogUnits(parent);
 
         Composite searchGroup = new Composite(parent, SWT.NONE);
@@ -111,12 +118,14 @@ public class SearchMetadataPage extends AbstractSearchPage {
 
             Group sourceGroup = UIUtils.createControlGroup(optionsGroup, CoreMessages.dialog_search_objects_group_objects_source, 1, GridData.FILL_BOTH, 0);
             gd = new GridData(GridData.FILL_BOTH);
-            gd.heightHint = 300;
+            //gd.heightHint = 300;
             sourceGroup.setLayoutData(gd);
             final DBNProject projectNode = core.getNavigatorModel().getRoot().getProject(core.getProjectRegistry().getActiveProject());
             DBNNode rootNode = projectNode == null ? core.getNavigatorModel().getRoot() : projectNode.getDatabases();
             dataSourceTree = new DatabaseNavigatorTree(sourceGroup, rootNode, SWT.SINGLE);
-            dataSourceTree.setLayoutData(new GridData(GridData.FILL_BOTH));
+            gd = new GridData(GridData.FILL_BOTH);
+            gd.heightHint = 300;
+            dataSourceTree.setLayoutData(gd);
 
             dataSourceTree.getViewer().addFilter(new ViewerFilter() {
                 @Override
@@ -269,9 +278,23 @@ public class SearchMetadataPage extends AbstractSearchPage {
             UIUtils.createTableColumn(typesTable, SWT.LEFT, CoreMessages.dialog_search_objects_column_description);
         }
 
+        try {
+            container.getRunnableContext().run(true, true, new IRunnableWithProgress() {
+                @Override
+                public void run(IProgressMonitor monitor) throws InvocationTargetException, InterruptedException {
+                    sourceNodes = loadTreeState(RuntimeUtils.makeMonitor(monitor), DBeaverCore.getGlobalPreferenceStore(), PROP_SOURCES);
+                }
+            });
+        } catch (InvocationTargetException e) {
+            UIUtils.showErrorDialog(getShell(), "Data sources load", "Error loading settings", e.getTargetException());
+        } catch (InterruptedException e) {
+            // ignore
+        }
+
         if (!sourceNodes.isEmpty()) {
             dataSourceTree.getViewer().setSelection(
                 new StructuredSelection(sourceNodes));
+            dataSourceTree.getViewer().reveal(NavigatorUtils.getDataSourceNode(sourceNodes.get(0)));
         } else {
             updateEnablement();
         }
@@ -400,7 +423,6 @@ public class SearchMetadataPage extends AbstractSearchPage {
             }
             searchHistory.add(history);
         }
-        sourceNodes = loadTreeState(store, PROP_SOURCES);
 
         {
             String type = store.getString(PROP_OBJECT_TYPE);
@@ -456,7 +478,7 @@ public class SearchMetadataPage extends AbstractSearchPage {
             enabled = false;
         }
 
-        container.setSearchEnabled(enabled);
+        container.setPerformActionEnabled(enabled);
     }
 
     protected static void saveTreeState(DBPPreferenceStore store, String propName, DatabaseNavigatorTree tree)

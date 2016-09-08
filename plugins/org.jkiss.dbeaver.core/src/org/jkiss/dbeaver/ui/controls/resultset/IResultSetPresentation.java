@@ -26,7 +26,6 @@ import org.eclipse.swt.widgets.Control;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
-import org.jkiss.dbeaver.model.data.DBDDisplayFormat;
 
 /**
  * Result set renderer.
@@ -36,8 +35,11 @@ import org.jkiss.dbeaver.model.data.DBDDisplayFormat;
  */
 public interface IResultSetPresentation {
 
-    String PRES_TOOLS_BEGIN = "rsv_pres_begin";
-    String PRES_TOOLS_END = "rsv_pres_end";
+    enum PresentationType {
+        COLUMNS,
+        DOCUMENT,
+        CUSTOM
+    }
 
     enum RowPosition {
         FIRST,
@@ -48,6 +50,8 @@ public interface IResultSetPresentation {
     }
 
     void createPresentation(@NotNull IResultSetController controller, @NotNull Composite parent);
+
+    IResultSetController getController();
 
     Control getControl();
 
@@ -62,12 +66,6 @@ public interface IResultSetPresentation {
     void clearMetaData();
 
     void updateValueView();
-
-    /**
-     * Called by controller to fill edit toolbar
-     * @param toolBar    toolbar
-     */
-    void fillToolbar(@NotNull IToolBarManager toolBar);
 
     /**
      * Called by controller to fill context menu.
@@ -90,12 +88,7 @@ public interface IResultSetPresentation {
     Point getCursorLocation();
 
     @Nullable
-    String copySelectionToString(
-        boolean copyHeader,
-        boolean copyRowNumbers,
-        boolean cut,
-        String delimiter,
-        DBDDisplayFormat format);
+    String copySelectionToString(ResultSetCopySettings settings);
 
     void printResultSet();
 

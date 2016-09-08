@@ -20,7 +20,6 @@ package org.jkiss.dbeaver.ui.controls.resultset;
 
 import org.eclipse.jface.action.IMenuListener;
 import org.eclipse.jface.action.IMenuManager;
-import org.eclipse.jface.action.IToolBarManager;
 import org.eclipse.jface.action.MenuManager;
 import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.events.DisposeEvent;
@@ -31,7 +30,6 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Menu;
 import org.eclipse.ui.IWorkbenchPartSite;
 import org.jkiss.code.NotNull;
-import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.ui.UIUtils;
 
 import java.util.ArrayList;
@@ -43,11 +41,13 @@ import java.util.List;
 public abstract class AbstractPresentation implements IResultSetPresentation, ISelectionProvider {
 
     private static final String PRESENTATION_CONTROL_ID = "org.jkiss.dbeaver.ui.resultset.presentation";
+    public static final StructuredSelection EMPTY_SELECTION = new StructuredSelection();
 
     @NotNull
     protected IResultSetController controller;
     private final List<ISelectionChangedListener> selectionChangedListenerList = new ArrayList<>();
 
+    @Override
     @NotNull
     public IResultSetController getController() {
         return controller;
@@ -56,11 +56,6 @@ public abstract class AbstractPresentation implements IResultSetPresentation, IS
     @Override
     public void createPresentation(@NotNull final IResultSetController controller, @NotNull Composite parent) {
         this.controller = controller;
-    }
-
-    @Override
-    public void fillToolbar(@NotNull IToolBarManager toolBar) {
-
     }
 
     @Override
@@ -174,7 +169,7 @@ public abstract class AbstractPresentation implements IResultSetPresentation, IS
 
     @Override
     public ISelection getSelection() {
-        return new StructuredSelection();
+        return EMPTY_SELECTION;
     }
 
     @Override

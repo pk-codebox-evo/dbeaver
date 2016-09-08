@@ -64,10 +64,9 @@ import java.util.List;
  */
 public class ResultSetCommandHandler extends AbstractHandler {
 
+    public static final String CMD_TOGGLE_PANELS = "org.jkiss.dbeaver.core.resultset.grid.togglePreview";
     public static final String CMD_TOGGLE_MODE = "org.jkiss.dbeaver.core.resultset.toggleMode";
-    public static final String CMD_TOGGLE_RESULT_PANEL = "org.jkiss.dbeaver.ui.editors.sql.toggle.result.panel";
     public static final String CMD_SWITCH_PRESENTATION = "org.jkiss.dbeaver.core.resultset.switchPresentation";
-    public static final String CMD_SWITCH_PANEL = "org.jkiss.dbeaver.ui.editors.sql.switch.panel";
     public static final String CMD_ROW_FIRST = "org.jkiss.dbeaver.core.resultset.row.first";
     public static final String CMD_ROW_PREVIOUS = "org.jkiss.dbeaver.core.resultset.row.previous";
     public static final String CMD_ROW_NEXT = "org.jkiss.dbeaver.core.resultset.row.next";
@@ -85,9 +84,9 @@ public class ResultSetCommandHandler extends AbstractHandler {
     public static final String CMD_NAVIGATE_LINK = "org.jkiss.dbeaver.core.resultset.navigateLink";
     public static final String CMD_FILTER_MENU = "org.jkiss.dbeaver.core.resultset.filterMenu";
 
-    public static ResultSetViewer getActiveResultSet(IWorkbenchPart activePart) {
+    public static IResultSetController getActiveResultSet(IWorkbenchPart activePart) {
         if (activePart instanceof IResultSetContainer) {
-            return ((IResultSetContainer) activePart).getResultSetViewer();
+            return ((IResultSetContainer) activePart).getResultSetController();
         } else if (activePart instanceof MultiPageAbstractEditor) {
             return getActiveResultSet(((MultiPageAbstractEditor) activePart).getActiveEditor());
         } else if (activePart != null) {
@@ -100,7 +99,7 @@ public class ResultSetCommandHandler extends AbstractHandler {
     @Nullable
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
-        final ResultSetViewer rsv = getActiveResultSet(HandlerUtil.getActivePart(event));
+        final ResultSetViewer rsv = (ResultSetViewer) getActiveResultSet(HandlerUtil.getActivePart(event));
         if (rsv == null) {
             return null;
         }
@@ -113,6 +112,9 @@ public class ResultSetCommandHandler extends AbstractHandler {
                 break;
             case CMD_TOGGLE_MODE:
                 rsv.toggleMode();
+                break;
+            case CMD_TOGGLE_PANELS:
+                rsv.showPanels(!rsv.isPanelsVisible());
                 break;
             case CMD_SWITCH_PRESENTATION:
                 rsv.switchPresentation();
@@ -185,7 +187,7 @@ public class ResultSetCommandHandler extends AbstractHandler {
                         String scriptText = DBUtils.generateScript(sqlScript.toArray(new DBEPersistAction[sqlScript.size()]), false);
                         scriptText =
                             SQLUtils.generateCommentLine(
-                                rsv.getExecutionContext().getDataSource(),
+                                rsv.getExecutionContext() == null ? null : rsv.getExecutionContext().getDataSource(),
                                 "Actual parameter values may differ, what you see is a default string representation of values") +
                             scriptText;
                         ViewSQLDialog dialog = new ViewSQLDialog(
@@ -205,7 +207,7 @@ public class ResultSetCommandHandler extends AbstractHandler {
             case IWorkbenchCommandConstants.EDIT_COPY:
                 ResultSetUtils.copyToClipboard(
                     presentation.copySelectionToString(
-                        false, false, false, null, DBDDisplayFormat.EDIT));
+                        new ResultSetCopySettings(false, false, false, null, null, DBDDisplayFormat.EDIT)));
                 break;
             case IWorkbenchCommandConstants.EDIT_PASTE:
             case CoreCommands.CMD_PASTE_SPECIAL:
@@ -216,13 +218,11 @@ public class ResultSetCommandHandler extends AbstractHandler {
             case IWorkbenchCommandConstants.EDIT_CUT:
                 ResultSetUtils.copyToClipboard(
                     presentation.copySelectionToString(
-                        false, false, true, null, DBDDisplayFormat.EDIT)
+                        new ResultSetCopySettings(false, false, true, null, null, DBDDisplayFormat.EDIT))
                 );
                 break;
             case IWorkbenchCommandConstants.FILE_PRINT:
-                if (presentation != null) {
-                    presentation.printResultSet();
-                }
+                presentation.printResultSet();
                 break;
             case ITextEditorActionDefinitionIds.SMART_ENTER:
                 if (presentation instanceof IResultSetEditor) {

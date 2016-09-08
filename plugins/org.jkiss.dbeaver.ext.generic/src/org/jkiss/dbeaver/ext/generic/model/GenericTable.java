@@ -104,7 +104,16 @@ public class GenericTable extends JDBCTable<GenericDataSource, GenericStructCont
     @Override
     public String getFullQualifiedName()
     {
-        return DBUtils.getFullQualifiedName(getDataSource(), getCatalog(), getSchema(), this);
+        return getDataSource().getMetaModel().useCatalogInObjectNames() ?
+            DBUtils.getFullQualifiedName(
+                getDataSource(),
+                getCatalog(),
+                getSchema(),
+                this) :
+            DBUtils.getFullQualifiedName(
+                getDataSource(),
+                getSchema(),
+                this);
     }
 
     @Override
@@ -206,17 +215,9 @@ public class GenericTable extends JDBCTable<GenericDataSource, GenericStructCont
     }
 
     @Override
-    public synchronized boolean refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException
+    public synchronized DBSObject refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException
     {
-        this.getContainer().getTableCache().clearChildrenCache(this);
-        this.getContainer().getIndexCache().clearObjectCache(this);
-        this.getContainer().getPrimaryKeysCache().clearObjectCache(this);
-        this.getContainer().getForeignKeysCache().clearObjectCache(this);
-        triggers = null;
-        rowCount = null;
-        ddl = null;
-
-        return true;
+        return this.getContainer().getTableCache().refreshObject(monitor, getContainer(), this);
     }
 
     // Comment row count calculation - it works too long and takes a lot of resources without serious reason

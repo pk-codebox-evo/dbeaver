@@ -37,16 +37,15 @@ import org.eclipse.ui.menus.UIElement;
 import org.eclipse.ui.part.IPageSite;
 import org.eclipse.ui.services.IServiceLocator;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.core.CoreCommands;
 import org.jkiss.dbeaver.core.DBeaverCore;
 import org.jkiss.dbeaver.core.DBeaverUI;
-import org.jkiss.dbeaver.model.DBPNamedObject;
-import org.jkiss.dbeaver.model.DBUtils;
-import org.jkiss.dbeaver.model.navigator.DBNDatabaseFolder;
-import org.jkiss.dbeaver.model.navigator.DBNDatabaseNode;
-import org.jkiss.dbeaver.model.navigator.DBNNode;
-import org.jkiss.dbeaver.model.navigator.DBNProject;
+import org.jkiss.dbeaver.model.*;
+import org.jkiss.dbeaver.model.navigator.*;
+import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSObject;
+import org.jkiss.dbeaver.model.struct.DBSObjectFilter;
 import org.jkiss.dbeaver.model.struct.DBSObjectSelector;
 import org.jkiss.dbeaver.model.struct.DBSWrapper;
 import org.jkiss.dbeaver.ui.ActionUtils;
@@ -54,6 +53,7 @@ import org.jkiss.dbeaver.ui.IActionConstants;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.ViewerColumnController;
 import org.jkiss.dbeaver.ui.actions.navigator.NavigatorActionSetActiveObject;
+import org.jkiss.dbeaver.ui.actions.navigator.NavigatorHandlerRefresh;
 import org.jkiss.dbeaver.ui.dnd.DatabaseObjectTransfer;
 import org.jkiss.dbeaver.ui.dnd.TreeNodeTransfer;
 import org.jkiss.dbeaver.ui.navigator.database.DatabaseNavigatorView;
@@ -69,6 +69,8 @@ import java.util.*;
 public class NavigatorUtils {
 
     public static final String MB_NAVIGATOR_ADDITIONS = "navigator_additions";
+
+    private static final Log log = Log.getLog(NavigatorUtils.class);
 
     public static DBNNode getSelectedNode(ISelectionProvider selectionProvider)
     {
@@ -374,6 +376,7 @@ public class NavigatorUtils {
                     TreeItem treeItem = (TreeItem)event.item;
                     Object curObject = treeItem.getData();
                     if (curObject instanceof DBNNode) {
+                        @SuppressWarnings("unchecked")
                         Collection<DBNNode> nodesToDrop = (Collection<DBNNode>) event.data;
                         if (!CommonUtils.isEmpty(nodesToDrop)) {
                             for (DBNNode node : nodesToDrop) {
@@ -442,4 +445,88 @@ public class NavigatorUtils {
         return null;
     }
 
+    public static void filterSelection(final ISelection selection, boolean exclude)
+    {
+        if (selection instanceof IStructuredSelection) {
+            Map<DBNDatabaseFolder, DBSObjectFilter> folders = new HashMap<>();
+            for (Object item : ((IStructuredSelection)selection).toArray()) {
+                if (item instanceof DBNNode) {
+                    final DBNNode node = (DBNNode) item;
+                    DBNDatabaseFolder folder = (DBNDatabaseFolder) node.getParentNode();
+                    DBSObjectFilter nodeFilter = folders.get(folder);
+                    if (nodeFilter == null) {
+                        nodeFilter = folder.getNodeFilter(folder.getItemsMeta(), true);
+                        if (nodeFilter == null) {
+                            nodeFilter = new DBSObjectFilter();
+                        }
+                        folders.put(folder, nodeFilter);
+                    }
+                    if (exclude) {
+                        nodeFilter.addExclude(node.getNodeName());
+                    } else {
+                        nodeFilter.addInclude(node.getNodeName());
+                    }
+                    nodeFilter.setEnabled(true);
+                }
+            }
+            // Save folders
+            for (Map.Entry<DBNDatabaseFolder, DBSObjectFilter> entry : folders.entrySet()) {
+                entry.getKey().setNodeFilter(entry.getKey().getItemsMeta(), entry.getValue());
+            }
+            // Refresh all folders
+            NavigatorHandlerRefresh.refreshNavigator(folders.keySet());
+        }
+    }
+
+    public static boolean syncEditorWithNavigator(INavigatorModelView navigatorView, IEditorPart activeEditor) {
+        if (!(activeEditor instanceof IDataSourceContainerProviderEx)) {
+            return false;
+        }
+        IDataSourceContainerProviderEx dsProvider = (IDataSourceContainerProviderEx) activeEditor;
+        Viewer navigatorViewer = navigatorView.getNavigatorViewer();
+        if (navigatorViewer == null) {
+            return false;
+        }
+        DBNNode selectedNode = getSelectedNode(navigatorViewer.getSelection());
+        if (!(selectedNode instanceof DBNDatabaseNode)) {
+            return false;
+        }
+        final DBPDataSourceContainer ds = ((DBNDatabaseNode) selectedNode).getDataSourceContainer();
+        if (ds == null) {
+            return false;
+        }
+        if (dsProvider.getDataSourceContainer() != ds) {
+            dsProvider.setDataSourceContainer(ds);
+        }
+        // Now check if we can change default object
+        DBSObject dbObject = ((DBNDatabaseNode) selectedNode).getObject();
+        if (dbObject != null && dbObject.getParentObject() != null) {
+            DBPObject parentObject = DBUtils.getPublicObject(dbObject.getParentObject());
+            if (parentObject instanceof DBSObjectSelector) {
+                DBSObjectSelector selector = (DBSObjectSelector) parentObject;
+                DBSObject curDefaultObject = selector.getDefaultObject();
+                if (curDefaultObject != dbObject) {
+                    if (curDefaultObject != null && curDefaultObject.getClass() != dbObject.getClass()) {
+                        // Wrong object type
+                        return true;
+                    }
+                    try {
+                        selector.setDefaultObject(VoidProgressMonitor.INSTANCE, dbObject);
+                    } catch (Throwable e) {
+                        log.debug(e);
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    public static DBNDataSource getDataSourceNode(DBNNode node) {
+        for (DBNNode pn = node; pn != null; pn = pn.getParentNode()) {
+            if (pn instanceof DBNDataSource) {
+                return (DBNDataSource) pn;
+            }
+        }
+        return null;
+    }
 }
